@@ -198,7 +198,7 @@ export class World {
   }
 
   /** Ground height and collisions for a body at (x, y) of height ph, standing at track position `dist`. */
-  probe(dist, px, py, ph, enteredLane = -1) {
+  probe(dist, px, py, ph, enteredLane = -1, ownLane = -1) {
     let ground = 0; const hits = [];
     const PD = PLAYER.halfDepth, PW = PLAYER.halfWidth;
     for (const sd of this.solids) {
@@ -206,12 +206,12 @@ export class World {
       const dx = Math.abs(px - sd.x);
       if (dx >= sd.hw + PW) continue;
       if (sd.type === 'high') {
-        if (py < sd.yTop && py + ph > sd.yBot) hits.push({ sd, kind: dx > sd.hw - 0.2 || sd.lane === enteredLane ? 'side' : 'front' });
+        if (py < sd.yTop && py + ph > sd.yBot) hits.push({ sd, kind: dx > sd.hw - 0.2 || sd.lane === enteredLane || (ownLane >= 0 && sd.lane !== ownLane) ? 'side' : 'front' });
         continue;
       }
       const u = clamp(dist, sd.s0, sd.s1) - sd.s0, h = this.profile(sd, u);
       if (sd.type === 'block' && py >= h - PLAYER.stepUp) { ground = Math.max(ground, h); continue; }
-      if (py < h - (sd.type === 'block' ? PLAYER.stepUp : 0.05)) hits.push({ sd, kind: dx > sd.hw - 0.2 || sd.lane === enteredLane ? 'side' : 'front' });
+      if (py < h - (sd.type === 'block' ? PLAYER.stepUp : 0.05)) hits.push({ sd, kind: dx > sd.hw - 0.2 || sd.lane === enteredLane || (ownLane >= 0 && sd.lane !== ownLane) ? 'side' : 'front' });
     }
     return { ground, hits };
   }

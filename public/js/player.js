@@ -94,10 +94,10 @@ export class Player {
     let probe;
     if (this.flying) {
       this.y += (this.flyY - this.y) * Math.min(1, dt * 3.2); this.vy = 0; this.grounded = false;
-      probe = world.probe(dist, this.x, this.y, this.height, entered);
+      probe = world.probe(dist, this.x, this.y, this.height, entered, this.target);
     } else {
       this.vy -= PLAYER.gravity * dt; this.y += this.vy * dt;
-      probe = world.probe(dist, this.x, this.y, this.height, entered);
+      probe = world.probe(dist, this.x, this.y, this.height, entered, this.target);
       if (this.y <= probe.ground + 0.001) {
         if (!this.grounded && this.vy < -5) { ev.push({ type: 'land', hard: this.vy < -20 }); this.landSquash = 0.18; }
         this.y = probe.ground; this.vy = 0; this.grounded = true;
