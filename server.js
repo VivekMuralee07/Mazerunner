@@ -45,6 +45,7 @@ function serveFile(req, res, file) {
       ETag: etag,
       // Vendored libs never change for a given deploy; app code revalidates.
       'Cache-Control': vendored ? 'public, max-age=86400' : 'no-cache',
+      ...(file.endsWith(`${path.sep}sw.js`) ? { 'Service-Worker-Allowed': '/' } : {}),
       'X-Content-Type-Options': 'nosniff',
       'Referrer-Policy': 'no-referrer',
     };

@@ -68,6 +68,13 @@ No build step, no `npm install` needed (there are no dependencies). Three.js r18
 Render injects `PORT`; the server binds `0.0.0.0:$PORT`. Static assets are gzip-compressed and cached (vendored libs for a day,
 game code revalidated with ETags, so new deploys show up immediately).
 
+## Install as an app / build an Android APK
+
+The game is a PWA (manifest, icons, offline service worker), so players can use "Add to Home Screen" / "Install app".
+For an APK: open <https://www.pwabuilder.com>, enter your Render URL, choose **Package for stores → Android**, and install the
+generated APK (or upload the AAB to Google Play). For a Play Store build, host the `assetlinks.json` it gives you at
+`public/.well-known/assetlinks.json`.
+
 ## Project layout
 
 ```
