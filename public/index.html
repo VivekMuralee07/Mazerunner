@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
-<meta name="theme-color" content="#0b1a14">
+<meta name="theme-color" content="#cfe9ff">
 <meta name="description" content="Labyrinth Run – outrun the Minotaur through an endless, ever-shifting maze. A Subway Surfers-style 3D runner.">
 <title>Labyrinth Run – Maze Runner</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230b1a14'/%3E%3Cpath d='M12 52V12h40v32H28V28h12' fill='none' stroke='%23ffc933' stroke-width='6' stroke-linecap='square'/%3E%3C/svg%3E">
@@ -65,6 +65,7 @@
     <div class="btnrow">
       <button id="btnShop" class="btn">Outfits &amp; Upgrades</button>
       <button id="btnMissions" class="btn">Missions</button>
+      <button id="btnBoard" class="btn">Leaderboard</button>
       <button id="btnSettings" class="btn">Settings</button>
     </div>
     <p class="hint"><span class="desktop">← → switch lanes · ↑ jump · ↓ roll · P pause</span><span class="touchhint">Swipe to switch lanes, jump and roll</span></p>
@@ -90,12 +91,31 @@
   </div>
 </section>
 
+<section id="board" class="screen panel-screen">
+  <div class="panel narrow">
+    <header><h2>Leaderboard</h2><div class="pill dim" id="boardRank">—</div></header>
+    <h3 class="subhead">Your lifetime stats</h3>
+    <div class="statgrid" id="boardStats"></div>
+    <h3 class="subhead">Top runners</h3>
+    <ol id="boardList" class="board"></ol>
+    <p id="boardMsg" class="sub"></p>
+    <footer><button class="btn back">Back</button></footer>
+  </div>
+</section>
+
 <section id="settings" class="screen panel-screen">
   <div class="panel narrow">
     <header><h2>Settings</h2></header>
     <div class="setrow"><span>Music</span><button class="toggle" id="setMusic"></button></div>
     <div class="setrow"><span>Sound effects</span><button class="toggle" id="setSfx"></button></div>
     <div class="setrow"><span>Graphics</span><div class="seg" id="setQuality"><button data-q="auto">Auto</button><button data-q="high">High</button><button data-q="medium">Medium</button><button data-q="low">Low</button></div></div>
+    <div class="setrow"><span>Nickname</span><input id="setName" class="field" maxlength="16" placeholder="Runner" autocomplete="off" spellcheck="false"></div>
+    <div class="setcol">
+      <span>Recovery code <small>(keeps your progress if you change phone or clear data)</small></span>
+      <div class="coderow"><code id="setId"></code><button class="btn small" id="setCopy">Copy</button></div>
+      <div class="coderow"><input id="setRestore" class="field" placeholder="Paste a recovery code to restore" autocomplete="off" spellcheck="false"><button class="btn small gold" id="setRestoreBtn">Restore</button></div>
+      <p id="setMsg" class="sub"></p>
+    </div>
     <div class="setrow"><span>Progress</span><button class="btn danger small" id="setReset">Reset save</button></div>
     <footer><button class="btn back">Back</button></footer>
   </div>

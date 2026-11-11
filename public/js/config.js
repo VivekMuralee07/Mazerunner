@@ -39,6 +39,7 @@ export const POWERUPS = {
   double: { name: 'Double Points', icon: '✖2', color: '#ffd23f', base: 9, step: 2.5, desc: 'Doubles every point you earn', cost: [200, 400, 800, 1600, 3200] },
   boots:  { name: 'Spring Boots', icon: '👢', color: '#37e08a', base: 9, step: 2.5, desc: 'Jump much higher', cost: [200, 400, 800, 1600, 3200] },
   wings:  { name: 'Wings', icon: '🪽', color: '#6fd6ff', base: 6, step: 1.2, desc: 'Fly over the maze, safely', cost: [300, 600, 1200, 2400, 4800] },
+  jetpack: { name: 'Jetpack', icon: '🚀', color: '#ff7a1a', base: 15, step: 0, desc: 'Blast over the maze for 15 seconds, collecting sky coins', cost: [] },
   shield: { name: 'Spirit Shield', icon: '🛡', color: '#b388ff', base: 0, step: 0, desc: 'Absorbs one crash', cost: [] },
 };
 export const MAX_UPGRADE = 5;
@@ -52,31 +53,31 @@ export const SKINS = [
   { id: 'gold',     name: 'Pharaoh',   cost: 5000, skin: 0xd8a779, tunic: 0xe0a400, pants: 0xf4f1de, accent: 0x00e5ff, hair: 0x0b0b0b, glow: 0xffe066 },
 ];
 
-// Four biomes of the living labyrinth. Colours drive fog, sky, lights and materials.
+// Four sunlit biomes of the living labyrinth. Colours drive fog, sky, lights and materials.
 export const BIOMES = [
   {
-    id: 'hedge', name: 'The Overgrown Maze',
-    fog: 0x1b3a2f, fogDensity: 0.0135, skyTop: 0x07172a, skyBottom: 0x2f6b55, star: 0.6,
-    ambient: 0x6fa58a, ambientI: 0.85, sun: 0xbfe6ff, sunI: 1.5, torch: 0xffa24a, accent: 0xffd166,
-    wall: 'hedge', floor: 'cobble', trim: 0x2d4a2b,
+    id: 'hedge', name: 'The Sunlit Garden Maze',
+    fog: 0xd3ecd9, fogDensity: 0.0105, skyTop: 0x4aa3ff, skyBottom: 0xe3f5ff, star: 0,
+    ambient: 0xe6f4ff, ground: 0xb8c79a, ambientI: 1.35, sun: 0xfff0cc, sunI: 2.7, torch: 0xffa93a, accent: 0xff9f1c,
+    wall: 'hedge', floor: 'cobble', trim: 0x8fb083,
   },
   {
-    id: 'stone', name: 'The Forgotten Ruins',
-    fog: 0x2b2438, fogDensity: 0.0145, skyTop: 0x0a0716, skyBottom: 0x5a3a63, star: 0.9,
-    ambient: 0x9b8cc0, ambientI: 0.8, sun: 0xd9c9ff, sunI: 1.35, torch: 0xff9a3c, accent: 0xff7b54,
-    wall: 'stone', floor: 'flag', trim: 0x4b4258,
+    id: 'stone', name: 'The Golden Ruins',
+    fog: 0xf3e2cf, fogDensity: 0.0115, skyTop: 0x5fa8ff, skyBottom: 0xffeed6, star: 0,
+    ambient: 0xfff1e2, ground: 0xcfb597, ambientI: 1.35, sun: 0xffe3b0, sunI: 2.7, torch: 0xff9a3c, accent: 0xff7b54,
+    wall: 'stone', floor: 'flag', trim: 0xb9a58c,
   },
   {
-    id: 'crystal', name: 'The Crystal Depths',
-    fog: 0x0c2a3f, fogDensity: 0.0155, skyTop: 0x020b1a, skyBottom: 0x0f5d86, star: 1.0,
-    ambient: 0x5db4e8, ambientI: 0.9, sun: 0x9fe7ff, sunI: 1.25, torch: 0x4cd9ff, accent: 0x7df3ff,
-    wall: 'crystal', floor: 'slate', trim: 0x1b4a63,
+    id: 'crystal', name: 'The Frozen Crystal Gardens',
+    fog: 0xd2edf9, fogDensity: 0.0115, skyTop: 0x3d98ee, skyBottom: 0xe9faff, star: 0,
+    ambient: 0xe2f4ff, ground: 0xa9c9d8, ambientI: 1.4, sun: 0xf2fbff, sunI: 2.5, torch: 0x2ec8ff, accent: 0x18b8e0,
+    wall: 'crystal', floor: 'slate', trim: 0x86b6cc,
   },
   {
-    id: 'lava', name: 'The Ember Halls',
-    fog: 0x3a0f0a, fogDensity: 0.0155, skyTop: 0x14040a, skyBottom: 0x8a2a12, star: 0.35,
-    ambient: 0xd98866, ambientI: 0.8, sun: 0xffc9a0, sunI: 1.3, torch: 0xff5a1f, accent: 0xff8a3d,
-    wall: 'basalt', floor: 'ember', trim: 0x3d1a14,
+    id: 'lava', name: 'The Ember Canyon',
+    fog: 0xf8d9c1, fogDensity: 0.0115, skyTop: 0xff8e4a, skyBottom: 0xffe6c4, star: 0,
+    ambient: 0xfff0e4, ground: 0xd3a789, ambientI: 1.3, sun: 0xffd3a1, sunI: 2.6, torch: 0xff5a1f, accent: 0xff6a1a,
+    wall: 'basalt', floor: 'ember', trim: 0xc28a68,
   },
 ];
 

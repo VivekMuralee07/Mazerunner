@@ -16,7 +16,9 @@ try { ({ chromium } = require('playwright')); }
 catch { ({ chromium } = require(path.join(execSync('npm root -g').toString().trim(), 'playwright'))); }
 
 const PORT = 3100 + Math.floor(Math.random() * 500);
-const server = spawn('node', ['server.js'], { cwd: ROOT, env: { ...process.env, PORT: String(PORT) }, stdio: 'ignore' });
+import os from 'node:os';
+const DATA = fs.mkdtempSync(path.join(os.tmpdir(), 'lr-data-'));
+const server = spawn('node', ['server.js'], { cwd: ROOT, env: { ...process.env, PORT: String(PORT), DATA_DIR: DATA }, stdio: 'ignore' });
 const url = `http://localhost:${PORT}/`;
 for (let i = 0; i < 50; i++) { try { await new Promise((r, j) => http.get(url + 'healthz', (x) => (x.statusCode === 200 ? r() : j())).on('error', j)); break; } catch { await new Promise((r) => setTimeout(r, 100)); } }
 
@@ -195,13 +197,85 @@ try {
   check('settings toggles persist', r === false);
   await page.click('#settings .back');
 
+  console.log('Jetpack');
+  r = await page.evaluate(() => {
+    const g = window.__game, T = window.T; T.start(); g.grant('jetpack', 0, 1);
+    const t0 = g.timers.jetpack; T.add('wall', 1, 40); T.add('block', 1, 70, { ramp: false, body: 10 });
+    let maxY = 0, coins0 = g.runCoins; T.run(14, () => { maxY = Math.max(maxY, g.player.y); });
+    const stillFlying = g.player.flying && g.state === 'running'; const left = g.timers.jetpack;
+    T.until(() => !g.player.flying && g.player.grounded, 8);
+    return { t0, stillFlying, left: +left.toFixed(2), landed: g.player.grounded && !g.player.flying, st: g.state, maxY: +maxY.toFixed(1), coins: g.runCoins - coins0, effect: g.player.jet.visible };
+  });
+  check('Jetpack lasts 15 seconds', r.t0 === 15 && r.stillFlying && r.left > 0.5 && r.left < 1.5, JSON.stringify(r));
+  check('Jetpack flies over gates and slabs, then lands safely', r.landed && r.st === 'running' && r.maxY > 4);
+  check('Jetpack collects the sky coin trail', r.coins > 15, `coins ${r.coins}`);
+  check('Jetpack pick-up exists in the spawn pool', await page.evaluate(async () => (await (await fetch('/js/world.js')).text()).includes("'jetpack'")));
+
+  console.log('Persistent stats (server + device)');
+  r = await page.evaluate(async () => {
+    const id = crypto.randomUUID(), put = (i, b) => fetch(`/api/save/${i}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(b) });
+    const ok = (await put(id, { name: 'Tester<b>', save: { best: 4242, bestDistance: 700, totalRuns: 2, coins: 9 } })).status;
+    const got = await (await fetch(`/api/save/${id}`)).json();
+    const lb = await (await fetch(`/api/leaderboard?id=${id}`)).json();
+    const badId = (await put('nope', { save: {} })).status, badBody = (await put(id, { save: 'x' })).status;
+    const big = (await put(id, { save: { x: 'a'.repeat(30000) } })).status;
+    const none = (await fetch(`/api/save/${crypto.randomUUID()}`)).status;
+    return { ok, name: got.name, best: got.save.best, rank: lb.rank, me: lb.top.some((e) => e.me && e.best === 4242), badId, badBody, big, none };
+  });
+  check('API stores and returns a player save', r.ok === 200 && r.best === 4242, JSON.stringify(r));
+  check('names are sanitised, leaderboard ranks the player', r.name === 'Testerb' && r.rank >= 1 && r.me);
+  check('API rejects bad ids, bodies, oversize uploads and unknown players', r.badId === 400 && r.badBody === 400 && r.big === 413 && r.none === 404);
+
+  r = await page.evaluate(async () => {
+    const g = window.__game, T = window.T, Store = await import('/js/storage.js'), Cloud = await import('/js/cloud.js');
+    Store.get().settings.name = 'Vivek'; Store.save();
+    T.start(); g.runCoins = 33; T.add('wall', 1, 20); T.until(() => g.state === 'over', 10);
+    await new Promise((r) => setTimeout(r, 3500));            // debounce window, then it uploads on its own
+    const remote = await (await fetch(`/api/save/${Cloud.playerId()}`)).json();
+    return { remoteBest: remote.save.best, localBest: Store.get().best, name: remote.name, runs: remote.save.totalRuns, lifeCoins: remote.save.lifetime.coins };
+  });
+  check('finishing a run auto-uploads the stats to the server', r.remoteBest === r.localBest && r.remoteBest > 0 && r.name === 'Vivek' && r.lifeCoins >= 33, JSON.stringify(r));
+
+  r = await page.evaluate(async () => {
+    const Store = await import('/js/storage.js'), Cloud = await import('/js/cloud.js');
+    const code = Cloud.playerId(), before = Store.get().best;
+    await Cloud.push();
+    localStorage.removeItem('labyrinth-run-save-v1');            // simulate "cleared site data" on the device...
+    Store.load(); const wiped = Store.get().best;
+    await Store.restoreFromMirror?.();
+    await Cloud.restore(code);                                    // ...and recover from the recovery code
+    return { before, wiped, after: Store.get().best };
+  });
+  check('a recovery code restores progress after local data is wiped', r.wiped === 0 && r.after === r.before && r.before > 0, JSON.stringify(r));
+
+  r = await page.evaluate(async () => {
+    const Store = await import('/js/storage.js'); Store.save(); await new Promise((r) => setTimeout(r, 800));
+    localStorage.removeItem('labyrinth-run-save-v1');
+    const restored = await Store.restoreFromMirror(); Store.load();
+    return { restored, best: Store.get().best };
+  });
+  check('IndexedDB mirror restores a save that localStorage lost', r.restored && r.best > 0, JSON.stringify(r));
+
+  await page.evaluate(() => { const g = window.__game; g.state = 'menu'; g.resetRun(); g.ui.showMenu(); });
+  await page.click('#btnBoard');
+  await page.waitForFunction(() => document.querySelectorAll('#boardList li').length > 0, null, { timeout: 8000 });
+  check('leaderboard screen lists players and highlights you', (await page.locator('#boardList li.me').count()) === 1 && (await page.locator('#boardStats div').count()) === 9);
+  if (SHOTS) await page.screenshot({ path: path.join(ROOT, 'screenshots/leaderboard.png') });
+  await page.click('#board .back');
+  await page.click('#btnSettings');
+  await page.fill('#setName', 'Maze Master'); await page.dispatchEvent('#setName', 'change');
+  r = await page.evaluate(async () => { const m = await import('/js/storage.js'); return m.get().settings.name; });
+  check('nickname is saved', r === 'Maze Master');
+  check('recovery code is shown', /^[0-9a-f-]{36}$/i.test(await page.textContent('#setId')));
+  await page.click('#settings .back');
+
   console.log('PWA');
   const man = await page.evaluate(async () => { const r = await fetch('/manifest.webmanifest'); const m = await r.json(); const ok = await Promise.all(m.icons.map((i) => fetch(i.src).then((x) => x.ok))); return { name: m.name, display: m.display, icons: ok }; });
   check('web manifest is served and all its icons exist', man.name === 'Labyrinth Run' && man.icons.every(Boolean), JSON.stringify(man));
   await page.evaluate(() => navigator.serviceWorker.ready);
   check('service worker is active', await page.evaluate(() => !!navigator.serviceWorker.controller || !!navigator.serviceWorker.ready));
   await page.waitForTimeout(1500);
-  const cached = await page.evaluate(async () => (await (await caches.open('labyrinth-run-v1')).keys()).length);
+  const cached = await page.evaluate(async () => (await (await caches.open('labyrinth-run-v2')).keys()).length);
   check('app shell is precached for offline play', cached >= 30, `${cached} files`);
 
   console.log('Pause, controls & visuals');
@@ -223,7 +297,7 @@ try {
   if (SHOTS) { await page.waitForTimeout(500); await page.screenshot({ path: path.join(ROOT, 'screenshots/gameplay.png') }); }
   // canvas is not blank
   const lum = await page.evaluate(() => { const g = window.__game; g.composer.render(0.016); const c = document.createElement('canvas'); c.width = 64; c.height = 36; const x = c.getContext('2d'); x.drawImage(document.getElementById('game'), 0, 0, 64, 36); const d = x.getImageData(0, 0, 64, 36).data; let s = 0; for (let i = 0; i < d.length; i += 4) s += d[i] + d[i + 1] + d[i + 2]; return s / (d.length / 4) / 3; });
-  check('the 3D scene actually renders (canvas is not black)', lum > 8, `avg luminance ${lum.toFixed(1)}`);
+  check('the 3D scene renders in a bright, light theme', lum > 80, `avg luminance ${lum.toFixed(1)}`);
 
   console.log('Endless-run fuzz (bot plays ~10 simulated minutes, all biomes)');
   r = await page.evaluate(() => {
@@ -268,7 +342,7 @@ try {
   fail++; console.log('  FAIL  test run crashed:', e.message);
 }
 
-const bad = problems.filter((p) => !/GPU stall|swiftshader|WebGL: INVALID_VALUE: texImage|Automatic fallback to software WebGL|GL Driver Message/i.test(p));
+const bad = problems.filter((p) => !/status of (400|404|413)|GPU stall|swiftshader|WebGL: INVALID_VALUE: texImage|Automatic fallback to software WebGL|GL Driver Message/i.test(p));
 check('no console errors or page exceptions', bad.length === 0, bad.slice(0, 3).join(' | '));
 
 await browser.close(); server.kill();

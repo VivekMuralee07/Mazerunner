@@ -61,38 +61,59 @@ const mesh = (geo, mat, x = 0, y = 0, z = 0, cast = true, receive = false) => {
 };
 
 // ---------------------------------------------------------------- shared materials
-export function makeSharedMaterials(glowTex, runeTex) {
-  const emissive = (color, intensity = 2) => new THREE.MeshStandardMaterial({ color: 0x111111, emissive: color, emissiveIntensity: intensity, roughness: 0.5 });
-  return {
-    iron: new THREE.MeshStandardMaterial({ color: 0x6a707e, roughness: 0.5, metalness: 0.6 }),
-    darkStone: new THREE.MeshStandardMaterial({ color: 0x2a2630, roughness: 0.9 }),
-    hazard: emissive(0xff4a1c, 2.6),
-    danger: emissive(0xff2a55, 3),
-    safe: emissive(0x2ff0c0, 2.4),
-    gold: new THREE.MeshStandardMaterial({ color: 0xffc933, roughness: 0.3, metalness: 0.9, emissive: 0x7a5200, emissiveIntensity: 0.6 }),
-    flame: new THREE.MeshBasicMaterial({ color: 0xffb04a }),
-    rope: new THREE.MeshStandardMaterial({ color: 0x5a4632, roughness: 1 }),
-    glowTex, runeTex,
-    glowSprite: (color, opacity = 0.85) => new THREE.SpriteMaterial({ map: glowTex, color, transparent: true, opacity, blending: THREE.AdditiveBlending, depthWrite: false }),
-  };
+const mkCanvas = (w, h = w) => { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; };
+function tex(c, repeat = true) {
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
+  if (repeat) t.wrapS = t.wrapT = THREE.RepeatWrapping; return t;
+}
+function stripeTexture(a, b) {                 // diagonal hazard stripes
+  const S = 128, c = mkCanvas(S), x = c.getContext('2d');
+  x.fillStyle = a; x.fillRect(0, 0, S, S); x.fillStyle = b;
+  for (let i = -S; i < S * 2; i += 64) { x.beginPath(); x.moveTo(i, S); x.lineTo(i + 32, S); x.lineTo(i + 32 + S, 0); x.lineTo(i + S, 0); x.closePath(); x.fill(); }
+  return tex(c);
+}
+function chevronTexture(bg, fg) {              // forward-pointing arrows for climbable slabs
+  const S = 128, c = mkCanvas(S), x = c.getContext('2d');
+  x.fillStyle = bg; x.fillRect(0, 0, S, S);
+  x.strokeStyle = fg; x.lineWidth = 16; x.lineJoin = 'miter'; x.lineCap = 'butt';
+  x.beginPath(); x.moveTo(14, 92); x.lineTo(64, 40); x.lineTo(114, 92); x.stroke();
+  return tex(c);
+}
+let gateTexCache = null;                        // sealed gate: crimson slab, white X, golden frame
+function gateTexture() {
+  if (gateTexCache) return gateTexCache;
+  const S = 256, c = mkCanvas(S), x = c.getContext('2d');
+  x.fillStyle = '#e0223c'; x.fillRect(0, 0, S, S);
+  x.strokeStyle = '#ffd23f'; x.lineWidth = 16; x.strokeRect(8, 8, S - 16, S - 16);
+  x.strokeStyle = '#ffffff'; x.lineWidth = 26; x.lineCap = 'round';
+  x.beginPath(); x.moveTo(62, 62); x.lineTo(194, 194); x.moveTo(194, 62); x.lineTo(62, 194); x.stroke();
+  x.lineWidth = 8; x.strokeStyle = '#7a0a1c'; x.beginPath(); x.arc(128, 128, 104, 0, 6.28); x.stroke();
+  gateTexCache = tex(c, false); return gateTexCache;
 }
 
-// A glowing red sigil painted on gates.
-let gateTexCache = null;
-function gateRuneTexture() {
-  if (gateTexCache) return gateTexCache;
-  const S = 256, c = document.createElement('canvas'); c.width = c.height = S;
-  const x = c.getContext('2d');
-  x.fillStyle = '#000'; x.fillRect(0, 0, S, S);
-  x.strokeStyle = '#ff2a55'; x.lineWidth = 9; x.lineCap = 'round';
-  x.shadowColor = '#ff2a55'; x.shadowBlur = 14;
-  x.beginPath(); x.arc(128, 128, 84, 0, 6.28); x.stroke();
-  x.beginPath(); x.arc(128, 128, 54, 0, 6.28); x.lineWidth = 5; x.stroke();
-  x.lineWidth = 9;
-  x.beginPath(); x.moveTo(128, 30); x.lineTo(128, 226); x.moveTo(30, 128); x.lineTo(226, 128); x.stroke();
-  x.beginPath(); x.moveTo(70, 70); x.lineTo(186, 186); x.moveTo(186, 70); x.lineTo(70, 186); x.lineWidth = 5; x.stroke();
-  gateTexCache = new THREE.CanvasTexture(c); gateTexCache.colorSpace = THREE.SRGBColorSpace;
-  return gateTexCache;
+export function makeSharedMaterials(glowTex, runeTex) {
+  const emissive = (color, intensity = 2) => new THREE.MeshStandardMaterial({ color: 0x111111, emissive: color, emissiveIntensity: intensity, roughness: 0.5 });
+  const solid = (color, em = 0.18, rough = 0.5, metal = 0.1) => new THREE.MeshStandardMaterial({ color, roughness: rough, metalness: metal, emissive: color, emissiveIntensity: em });
+  const yb = stripeTexture('#ffd000', '#1b1b22'), rw = stripeTexture('#ff2a4a', '#ffffff');
+  const chev = chevronTexture('#22d3bd', '#ffffff'), chevRamp = chevronTexture('#7af0a8', '#0fa88a');
+  return {
+    iron: new THREE.MeshStandardMaterial({ color: 0x8a90a0, roughness: 0.45, metalness: 0.6 }),
+    darkStone: new THREE.MeshStandardMaterial({ color: 0x6a6578, roughness: 0.9 }),
+    hazard: emissive(0xff6a00, 1.6), danger: emissive(0xff2a55, 1.8), safe: emissive(0xffd23f, 1.4),
+    gold: new THREE.MeshStandardMaterial({ color: 0xffc933, roughness: 0.3, metalness: 0.8, emissive: 0xb37a00, emissiveIntensity: 0.5 }),
+    flame: new THREE.MeshBasicMaterial({ color: 0xffb04a }),
+    rope: new THREE.MeshStandardMaterial({ color: 0x8a6a4a, roughness: 1 }),
+    // obstacle palette: saturated + slightly self-lit so they pop against the muted maze
+    stripeYB: new THREE.MeshStandardMaterial({ map: yb, roughness: 0.5, emissive: 0xffffff, emissiveMap: yb, emissiveIntensity: 0.22 }),
+    stripeRW: new THREE.MeshStandardMaterial({ map: rw, roughness: 0.5, emissive: 0xffffff, emissiveMap: rw, emissiveIntensity: 0.22 }),
+    chevron: new THREE.MeshStandardMaterial({ map: chev, roughness: 0.45, emissive: 0xffffff, emissiveMap: chev, emissiveIntensity: 0.25 }),
+    chevronRamp: new THREE.MeshStandardMaterial({ map: chevRamp, roughness: 0.45, emissive: 0xffffff, emissiveMap: chevRamp, emissiveIntensity: 0.25 }),
+    orange: solid(0xff5a00, 0.3), purple: solid(0x7a2cff, 0.3), crimson: solid(0xd9203a, 0.28, 0.55), teal: solid(0x0fb8a5, 0.28),
+    spikeRed: solid(0xff1f3d, 0.5, 0.35, 0.2), white: solid(0xffffff, 0.3, 0.4),
+    gateFace: new THREE.MeshBasicMaterial({ map: gateTexture() }),
+    glowTex, runeTex,
+    glowSprite: (color, opacity = 0.85) => new THREE.SpriteMaterial({ map: glowTex, color, transparent: true, opacity: opacity * 0.55, depthWrite: false }),
+  };
 }
 
 // ---------------------------------------------------------------- obstacles
@@ -100,24 +121,22 @@ function gateRuneTexture() {
 
 export function buildLow(biomeMats, S) {
   const g = new THREE.Group();
-  g.add(mesh(boxGeo(2.0, 0.62, 0.8), biomeMats.wall, 0, 0.31, -0.4, true, true));
+  g.add(mesh(boxGeo(2.0, 0.62, 0.8, 1), S.stripeYB, 0, 0.31, -0.4, true, true));
   g.add(mesh(boxGeo(2.12, 0.14, 0.92), S.hazard, 0, 0.66, -0.4, false));
-  for (let i = 0; i < 5; i++) g.add(mesh(coneGeo(0.1, 0.34, 6), S.iron, -0.8 + i * 0.4, 0.83, -0.4));
-  g.add(mesh(boxGeo(0.28, 0.9, 0.9), biomeMats.trim, -1.0, 0.45, -0.4));
-  g.add(mesh(boxGeo(0.28, 0.9, 0.9), biomeMats.trim, 1.0, 0.45, -0.4));
+  for (let i = 0; i < 5; i++) g.add(mesh(coneGeo(0.11, 0.38, 6), S.spikeRed, -0.8 + i * 0.4, 0.86, -0.4));
+  for (const sx of [-1, 1]) g.add(mesh(boxGeo(0.3, 0.95, 0.95), S.orange, sx * 1.0, 0.475, -0.4));
   return g;
 }
 
 export function buildHigh(biomeMats, S) {
   const g = new THREE.Group();
   for (const sx of [-1, 1]) {
-    g.add(mesh(boxGeo(0.4, 2.7, 0.6), biomeMats.trim, sx * 1.05, 1.35, -0.4, true, true));
-    g.add(mesh(boxGeo(0.55, 0.22, 0.75), S.iron, sx * 1.05, 2.78, -0.4));
+    g.add(mesh(boxGeo(0.42, 2.7, 0.62), S.purple, sx * 1.05, 1.35, -0.4, true, true));
+    g.add(mesh(boxGeo(0.58, 0.22, 0.78), S.gold, sx * 1.05, 2.78, -0.4));
   }
-  g.add(mesh(boxGeo(2.3, 0.42, 0.6), S.iron, 0, 2.0, -0.4));
-  g.add(mesh(boxGeo(2.1, 0.07, 0.64), S.danger, 0, 1.76, -0.4, false));
+  g.add(mesh(boxGeo(2.3, 0.46, 0.64, 1), S.stripeRW, 0, 2.0, -0.4));
   for (let i = 0; i < 7; i++) {
-    const sp = mesh(coneGeo(0.1, 0.82, 6), S.iron, -0.9 + i * 0.3, 1.34, -0.4);
+    const sp = mesh(coneGeo(0.11, 0.82, 6), S.spikeRed, -0.9 + i * 0.3, 1.34, -0.4);
     sp.rotation.x = Math.PI; g.add(sp);
   }
   return g;
@@ -125,30 +144,27 @@ export function buildHigh(biomeMats, S) {
 
 export function buildWall(biomeMats, S) {
   const g = new THREE.Group();
-  g.add(mesh(boxGeo(2.1, 4.4, 1.1), biomeMats.wall, 0, 2.2, -0.55, true, true));
-  for (const y of [0.5, 2.2, 3.9]) g.add(mesh(boxGeo(2.24, 0.22, 1.24), S.iron, 0, y, -0.55));
-  const rune = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 1.5), new THREE.MeshBasicMaterial({ map: gateRuneTexture(), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
-  rune.position.set(0, 2.2, 0.03); g.add(rune);
-  g.add(mesh(boxGeo(2.4, 0.3, 1.3), biomeMats.trim, 0, 4.55, -0.55));
+  g.add(mesh(boxGeo(2.1, 4.4, 1.1), S.crimson, 0, 2.2, -0.55, true, true));
+  const face = new THREE.Mesh(new THREE.PlaneGeometry(1.9, 4.2), S.gateFace);
+  face.position.set(0, 2.2, 0.01); g.add(face);
+  for (const y of [0.45, 2.2, 3.95]) g.add(mesh(boxGeo(2.24, 0.2, 1.24), S.gold, 0, y, -0.55));
+  g.add(mesh(boxGeo(2.4, 0.3, 1.3), S.purple, 0, 4.55, -0.55));
   return g;
 }
 
-/** Climbable stone slab ("sarcophagus cart") with an optional ramp at its front. */
+/** Climbable slab with an optional ramp at its front. Teal body + chevron top = "you can ride this". */
 export function buildBlock(biomeMats, S, H, len, ramp) {
   const g = new THREE.Group();
   const bodyLen = len - ramp;
   if (ramp > 0) {
-    const w = mesh(wedgeGeo(2.0, H, ramp), biomeMats.trim, 0, 0, 0, true, true); g.add(w);
-    for (const sx of [-1, 1]) {
-      const e = mesh(wedgeGeo(0.07, H + 0.06, ramp), S.safe, sx * 1.0, 0, 0, false); g.add(e);
-    }
+    g.add(mesh(wedgeGeo(2.0, H, ramp), S.chevronRamp, 0, 0, 0, true, true));
+    for (const sx of [-1, 1]) g.add(mesh(wedgeGeo(0.09, H + 0.06, ramp), S.gold, sx * 1.0, 0, 0, false));
   }
-  g.add(mesh(boxGeo(2.0, H, bodyLen), biomeMats.wall, 0, H / 2, -ramp - bodyLen / 2, true, true));
-  // glowing rail along the top edges + corner studs
-  for (const sx of [-1, 1]) g.add(mesh(boxGeo(0.09, 0.09, bodyLen), S.safe, sx * 1.0, H + 0.02, -ramp - bodyLen / 2, false));
-  g.add(mesh(boxGeo(2.1, 0.09, 0.09), S.safe, 0, H + 0.02, -len, false));
-  g.add(mesh(boxGeo(2.08, 0.16, bodyLen + 0.08), S.gold, 0, H - 0.06, -ramp - bodyLen / 2, false));
-  g.children[g.children.length - 1].scale.set(1, 0.4, 1);
+  g.add(mesh(boxGeo(2.0, H, bodyLen), S.teal, 0, H / 2, -ramp - bodyLen / 2, true, true));
+  const top = mesh(boxGeo(1.86, 0.06, bodyLen - 0.1, 1.6), S.chevron, 0, H + 0.03, -ramp - bodyLen / 2, false, true); g.add(top);
+  for (const sx of [-1, 1]) g.add(mesh(boxGeo(0.12, 0.14, bodyLen), S.gold, sx * 0.96, H + 0.05, -ramp - bodyLen / 2, false));
+  g.add(mesh(boxGeo(2.06, 0.14, 0.12), S.gold, 0, H + 0.05, -len, false));
+  g.add(mesh(boxGeo(2.06, 0.18, bodyLen + 0.04), S.gold, 0, 0.1, -ramp - bodyLen / 2, false));
   return g;
 }
 
@@ -254,6 +270,12 @@ function iconTexture(type, color) {
     x.beginPath(); x.moveTo(62, 80); x.quadraticCurveTo(30, 70, 22, 36); x.quadraticCurveTo(46, 44, 62, 52);
     x.moveTo(66, 80); x.quadraticCurveTo(98, 70, 106, 36); x.quadraticCurveTo(82, 44, 66, 52); x.stroke();
     x.beginPath(); x.moveTo(64, 50); x.lineTo(64, 92); x.stroke();
+  } else if (type === 'jetpack') {
+    x.beginPath(); x.moveTo(64, 24); x.quadraticCurveTo(84, 44, 84, 76); x.lineTo(44, 76); x.quadraticCurveTo(44, 44, 64, 24); x.closePath(); x.fill();
+    x.fillStyle = '#fff'; x.beginPath(); x.arc(64, 54, 8, 0, 6.28); x.fill();
+    x.fillStyle = '#10131c'; x.beginPath(); x.moveTo(44, 76); x.lineTo(30, 98); x.lineTo(50, 86); x.closePath(); x.fill();
+    x.beginPath(); x.moveTo(84, 76); x.lineTo(98, 98); x.lineTo(78, 86); x.closePath(); x.fill();
+    x.fillStyle = '#fff'; x.beginPath(); x.moveTo(54, 84); x.lineTo(64, 106); x.lineTo(74, 84); x.closePath(); x.fill();
   } else if (type === 'shield') {
     x.beginPath(); x.moveTo(64, 26); x.lineTo(94, 38); x.quadraticCurveTo(94, 78, 64, 100); x.quadraticCurveTo(34, 78, 34, 38); x.closePath(); x.stroke();
     x.beginPath(); x.moveTo(64, 44); x.lineTo(64, 84); x.moveTo(48, 58); x.lineTo(80, 58); x.stroke();
@@ -266,8 +288,8 @@ export function buildPowerup(type, color, S) {
   const g = new THREE.Group();
   const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: iconTexture(type, color), transparent: true }));
   spr.scale.set(1.35, 1.35, 1); spr.position.y = 0.2; g.add(spr);
-  const halo = new THREE.Sprite(S.glowSprite(color, 0.9)); halo.scale.set(3.4, 3.4, 1); g.add(halo);
-  const ringMat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false });
+  const halo = new THREE.Sprite(S.glowSprite(color, 1.0)); halo.scale.set(3.2, 3.2, 1); g.add(halo);
+  const ringMat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.95, depthWrite: false });
   const ring = new THREE.Mesh(new THREE.TorusGeometry(0.95, 0.04, 8, 36), ringMat); ring.rotation.x = Math.PI / 2.4; g.add(ring);
   g.userData = { spr, halo, ring };
   return g;
@@ -404,7 +426,7 @@ export function buildMinotaur() {
 // ---------------------------------------------------------------- power-up effects attached to the runner
 export function buildWings(color) {
   const g = new THREE.Group();
-  const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
+  const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.85, depthWrite: false, side: THREE.DoubleSide });
   const mk = (sx) => {
     const w = new THREE.Group();
     for (let i = 0; i < 5; i++) {
@@ -421,8 +443,33 @@ export function buildWings(color) {
 
 export function buildShieldBubble(color) {
   const g = new THREE.Group();
-  const a = new THREE.Mesh(new THREE.SphereGeometry(1.25, 24, 16), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.16, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
-  const b = new THREE.Mesh(new THREE.IcosahedronGeometry(1.28, 1), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.35, wireframe: true, blending: THREE.AdditiveBlending, depthWrite: false }));
+  const a = new THREE.Mesh(new THREE.SphereGeometry(1.25, 24, 16), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.22, depthWrite: false, side: THREE.DoubleSide }));
+  const b = new THREE.Mesh(new THREE.IcosahedronGeometry(1.28, 1), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.6, wireframe: true, depthWrite: false }));
   g.add(a, b); g.userData = { a, b };
+  return g;
+}
+
+/** Twin-tank jetpack worn on the runner's back; flames animate via userData.flames. */
+export function buildJetpack() {
+  const g = new THREE.Group();
+  const shell = new THREE.MeshStandardMaterial({ color: 0xe9eef5, roughness: 0.3, metalness: 0.6 });
+  const accent = new THREE.MeshStandardMaterial({ color: 0xff5a00, roughness: 0.4, metalness: 0.3, emissive: 0xff5a00, emissiveIntensity: 0.3 });
+  const dark = new THREE.MeshStandardMaterial({ color: 0x2b2f3a, roughness: 0.5, metalness: 0.7 });
+  const flames = [];
+  for (const sx of [-1, 1]) {
+    const tank = new THREE.Group(); tank.position.set(sx * 0.17, 0, 0);
+    tank.add(mesh(cylGeo(0.12, 0.12, 0.62, 14), shell, 0, 0, 0));
+    tank.add(mesh(sphereGeo(0.12, 12, 8), accent, 0, 0.31, 0));
+    tank.add(mesh(cylGeo(0.13, 0.13, 0.08, 14), accent, 0, 0.1, 0));
+    tank.add(mesh(cylGeo(0.09, 0.14, 0.14, 12), dark, 0, -0.36, 0));
+    const fl = new THREE.Group(); fl.position.y = -0.46;
+    const outer = new THREE.Mesh(new THREE.ConeGeometry(0.11, 0.7, 10), new THREE.MeshBasicMaterial({ color: 0xff8a1a, transparent: true, opacity: 0.9 }));
+    outer.rotation.x = Math.PI; outer.position.y = -0.3; fl.add(outer);
+    const inner = new THREE.Mesh(new THREE.ConeGeometry(0.06, 0.45, 8), new THREE.MeshBasicMaterial({ color: 0xfff0a0 }));
+    inner.rotation.x = Math.PI; inner.position.y = -0.2; fl.add(inner);
+    tank.add(fl); flames.push(fl); g.add(tank);
+  }
+  g.add(mesh(boxGeo(0.5, 0.1, 0.12), dark, 0, 0.12, -0.04));
+  g.userData = { flames };
   return g;
 }

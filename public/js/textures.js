@@ -62,8 +62,8 @@ function crack(ctx, S, rand, color, width, len, branchChance = 0.12) {
 // ---------------------------------------------------------------- WALLS
 function hedgeWall(S = 512) {
   const rand = rng(11), c = canvas(S), x = c.getContext('2d');
-  x.fillStyle = '#0d2412'; x.fillRect(0, 0, S, S);
-  const greens = ['#143d1c', '#1b5227', '#236b30', '#2e8a3b', '#3aa549', '#0f2f17'];
+  x.fillStyle = '#2a7a2c'; x.fillRect(0, 0, S, S);
+  const greens = ['#2f9a3c', '#3cb04d', '#4cc85e', '#63da70', '#84e68c', '#27843a'];
   for (let layer = 0; layer < 3; layer++) {
     const n = 1100 - layer * 200;
     for (let i = 0; i < n; i++) {
@@ -73,7 +73,7 @@ function hedgeWall(S = 512) {
         x.save(); x.translate(wx, wy); x.rotate(rot);
         x.fillStyle = col; x.globalAlpha = 0.85;
         x.beginPath(); x.ellipse(0, 0, r, r * 0.45, 0, 0, 6.28); x.fill();
-        x.globalAlpha = 0.35; x.strokeStyle = '#8be08f'; x.lineWidth = 0.8;
+        x.globalAlpha = 0.4; x.strokeStyle = '#e2ffd8'; x.lineWidth = 0.8;
         x.beginPath(); x.moveTo(-r, 0); x.lineTo(r, 0); x.stroke();
         x.restore();
       });
@@ -96,14 +96,14 @@ function hedgeWall(S = 512) {
 function stoneWall(S = 512) {
   const rand = rng(23), c = canvas(S), x = c.getContext('2d');
   const em = canvas(S), ex = em.getContext('2d');
-  x.fillStyle = '#17141f'; x.fillRect(0, 0, S, S);
+  x.fillStyle = '#9d8a70'; x.fillRect(0, 0, S, S);
   ex.fillStyle = '#000'; ex.fillRect(0, 0, S, S);
   const rows = 8, bh = S / rows;
   for (let r = 0; r < rows; r++) {
     const bw = S / 4, off = (r % 2) * (bw / 2);
     for (let b = -1; b < 5; b++) {
       const bx = b * bw + off, by = r * bh;
-      const v = 62 + rand() * 40;
+      const v = 178 + rand() * 40;
       const tint = rand();
       x.fillStyle = rgb(v + 14 * tint, v + 6, v + 22 * (1 - tint));
       x.fillRect(bx + 3, by + 3, bw - 6, bh - 6);
@@ -117,7 +117,7 @@ function stoneWall(S = 512) {
     const px = rand() * S, py = rand() * S, r = 6 + rand() * 18;
     wrap(S, px, py, r, (wx, wy) => {
       const g = x.createRadialGradient(wx, wy, 0, wx, wy, r);
-      g.addColorStop(0, 'rgba(60,110,50,0.32)'); g.addColorStop(1, 'rgba(60,110,50,0)');
+      g.addColorStop(0, 'rgba(70,140,60,0.35)'); g.addColorStop(1, 'rgba(70,140,60,0)');
       x.fillStyle = g; x.fillRect(wx - r, wy - r, r * 2, r * 2);
     });
   }
@@ -140,9 +140,9 @@ function stoneWall(S = 512) {
 function crystalWall(S = 512) {
   const rand = rng(37), c = canvas(S), x = c.getContext('2d');
   const em = canvas(S), ex = em.getContext('2d');
-  x.fillStyle = '#0a1c2e'; x.fillRect(0, 0, S, S);
+  x.fillStyle = '#bfe3f5'; x.fillRect(0, 0, S, S);
   ex.fillStyle = '#000'; ex.fillRect(0, 0, S, S);
-  const cols = ['#0d2c47', '#12405f', '#0a233a', '#175a7c', '#0e3550', '#1b6f8e'];
+  const cols = ['#bfe3f5', '#a6d6f0', '#d8f1fb', '#8ccbe9', '#c6e9f8', '#9bd3ee'];
   for (let i = 0; i < 220; i++) {
     const px = rand() * S, py = rand() * S, r = 22 + rand() * 46, col = cols[Math.floor(rand() * cols.length)];
     const a = rand() * 6.28, pts = 3 + Math.floor(rand() * 3);
@@ -150,7 +150,7 @@ function crystalWall(S = 512) {
       x.beginPath();
       for (let k = 0; k < pts; k++) { const ang = a + (k / pts) * 6.28; x.lineTo(wx + Math.cos(ang) * r * (0.6 + rand() * 0.4), wy + Math.sin(ang) * r * (0.6 + rand() * 0.4)); }
       x.closePath(); x.fillStyle = col; x.globalAlpha = 0.9; x.fill();
-      x.globalAlpha = 0.5; x.strokeStyle = 'rgba(160,240,255,0.5)'; x.lineWidth = 1.3; x.stroke(); x.globalAlpha = 1;
+      x.globalAlpha = 0.5; x.strokeStyle = 'rgba(255,255,255,0.85)'; x.lineWidth = 1.5; x.stroke(); x.globalAlpha = 1;
     });
   }
   speckle(x, S, rand, 22);
@@ -165,18 +165,18 @@ function crystalWall(S = 512) {
 function basaltWall(S = 512) {
   const rand = rng(53), c = canvas(S), x = c.getContext('2d');
   const em = canvas(S), ex = em.getContext('2d');
-  x.fillStyle = '#1a0f0c'; x.fillRect(0, 0, S, S);
+  x.fillStyle = '#b87a58'; x.fillRect(0, 0, S, S);
   ex.fillStyle = '#000'; ex.fillRect(0, 0, S, S);
   // hexagonal-ish columns
   const hs = 64;
   for (let r = -1; r < S / (hs * 0.87) + 1; r++) for (let q = -1; q < S / hs + 1; q++) {
     const cx = q * hs + (r % 2 ? hs / 2 : 0), cy = r * hs * 0.87;
-    const v = 34 + rand() * 26;
+    const v = 175 + rand() * 40;
     x.fillStyle = rgb(v + 8, v * 0.7, v * 0.65);
     x.beginPath();
     for (let k = 0; k < 6; k++) { const a = Math.PI / 3 * k + Math.PI / 6; x.lineTo(cx + Math.cos(a) * hs * 0.56, cy + Math.sin(a) * hs * 0.56); }
     x.closePath(); x.fill();
-    x.strokeStyle = 'rgba(0,0,0,0.6)'; x.lineWidth = 3; x.stroke();
+    x.strokeStyle = 'rgba(100,45,25,0.55)'; x.lineWidth = 3; x.stroke();
   }
   speckle(x, S, rand, 26);
   for (let i = 0; i < 9; i++) crack(ex, S, rand, '#ff6a1a', 4, 38);
@@ -188,9 +188,9 @@ function basaltWall(S = 512) {
 // ---------------------------------------------------------------- FLOORS
 function cobbleFloor(S = 512) {
   const rand = rng(71), c = canvas(S), x = c.getContext('2d');
-  x.fillStyle = '#0c1a10'; x.fillRect(0, 0, S, S);
+  x.fillStyle = '#7f9070'; x.fillRect(0, 0, S, S);
   for (let i = 0; i < 150; i++) {
-    const px = rand() * S, py = rand() * S, r = 16 + rand() * 14, v = 70 + rand() * 40;
+    const px = rand() * S, py = rand() * S, r = 16 + rand() * 14, v = 170 + rand() * 45;
     wrap(S, px, py, r, (wx, wy) => {
       const g = x.createRadialGradient(wx - r * 0.3, wy - r * 0.3, 1, wx, wy, r);
       g.addColorStop(0, rgb(v + 20, v + 26, v + 10)); g.addColorStop(1, rgb(v - 20, v - 12, v - 25));
@@ -230,9 +230,9 @@ function tileFloor(S, seed, base, groutColor, glow) {
 const WALLS = { hedge: hedgeWall, stone: stoneWall, crystal: crystalWall, basalt: basaltWall };
 const FLOORS = {
   cobble: () => cobbleFloor(),
-  flag: () => tileFloor(512, 81, 0x6d6280, '#120f1a', null),
-  slate: () => tileFloor(512, 91, 0x2c5470, '#06131f', '#46d8ff'),
-  ember: () => tileFloor(512, 99, 0x4a2a22, '#120807', '#ff5a1a'),
+  flag: () => tileFloor(512, 81, 0xd6cbe0, '#8d8299', null),
+  slate: () => tileFloor(512, 91, 0xbcd8e8, '#6f93aa', '#46d8ff'),
+  ember: () => tileFloor(512, 99, 0xdcb8a0, '#90604a', '#ff6a2a'),
 };
 
 // ---------------------------------------------------------------- utility textures
@@ -294,8 +294,8 @@ export function buildBiomeMaterials(biomes, maxAniso = 4, onProgress) {
     cacheF[b.floor] = cacheF[b.floor] || FLOORS[b.floor]();
     const accent = new THREE.Color(b.accent);
     out[b.id] = {
-      wall: mk(cacheW[b.wall], 0xffffff, accent, b.wall === 'crystal' ? 0.85 : 1.5),
-      floor: mk(cacheF[b.floor], 0xffffff, accent, 1.2),
+      wall: mk(cacheW[b.wall], 0xffffff, accent, b.wall === 'crystal' ? 0.7 : 0.9),
+      floor: mk(cacheF[b.floor], 0xffffff, accent, 0.7),
       trim: new THREE.MeshStandardMaterial({ map: null, color: b.trim, roughness: 0.85, metalness: 0.1 }),
     };
     onProgress && onProgress(++i / biomes.length);

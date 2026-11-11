@@ -12,8 +12,9 @@ export class Player {
     this.shadow = new THREE.Mesh(new THREE.CircleGeometry(0.55, 20), new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.38, depthWrite: false }));
     this.shadow.rotation.x = -Math.PI / 2; scene.add(this.shadow);
     this.wings = M.buildWings(0x7fe0ff); this.wings.visible = false; this.wings.position.set(0, 1.35, 0.22); this.holder.add(this.wings);
+    this.jet = M.buildJetpack(); this.jet.visible = false; this.jet.position.set(0, 1.25, 0.3); this.holder.add(this.jet);
     this.bubble = M.buildShieldBubble(0xb388ff); this.bubble.visible = false; this.bubble.position.y = 0.95; this.holder.add(this.bubble);
-    this.magRing = new THREE.Mesh(new THREE.TorusGeometry(0.75, 0.03, 6, 32), new THREE.MeshBasicMaterial({ color: 0xff5470, transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending, depthWrite: false }));
+    this.magRing = new THREE.Mesh(new THREE.TorusGeometry(0.75, 0.04, 6, 32), new THREE.MeshBasicMaterial({ color: 0xff5470, transparent: true, opacity: 0.9, depthWrite: false }));
     this.magRing.rotation.x = Math.PI / 2; this.magRing.visible = false; this.holder.add(this.magRing);
     this.bootGlow = new THREE.Sprite(S.glowSprite(0x37e08a, 0.9)); this.bootGlow.scale.set(1.8, 1.8, 1); this.bootGlow.visible = false; this.holder.add(this.bootGlow);
     this.setSkin(skin);
@@ -169,6 +170,7 @@ export class Player {
       this.wings.userData.L.rotation.z = -0.2 - f * 0.5; this.wings.userData.R.rotation.z = 0.2 + f * 0.5;
       this.wings.rotation.x = this.flying ? 0.0 : 0;
     }
+    if (this.jet.visible) { const k = 0.8 + Math.sin(t * 40) * 0.25; for (const f of this.jet.userData.flames) f.scale.set(1, k + Math.random() * 0.3, 1); }
     if (this.bubble.visible) { this.bubble.rotation.y += dt * 0.8; this.bubble.userData.a.material.opacity = 0.12 + Math.sin(t * 6) * 0.04; }
     if (this.magRing.visible) { this.magRing.rotation.z += dt * 3; this.magRing.position.y = 0.95 + Math.sin(t * 3) * 0.1; this.magRing.scale.setScalar(1 + (Math.sin(t * 6) * 0.5 + 0.5) * 0.25); }
     if (this.bootGlow.visible) this.bootGlow.position.set(0, 0.1, 0);
@@ -187,8 +189,8 @@ export class Player {
     this.shadow.position.y = 0.03;
   }
 
-  setEffects({ shield, wings, boots, magnet }) {
-    this.bubble.visible = !!shield; this.wings.visible = !!wings; this.magRing.visible = !!magnet; this.bootGlow.visible = !!boots;
+  setEffects({ shield, wings, boots, magnet, jetpack }) {
+    this.bubble.visible = !!shield; this.wings.visible = !!wings; this.jet.visible = !!jetpack; this.magRing.visible = !!magnet; this.bootGlow.visible = !!boots;
   }
 
   stumble() { this.stumbleT = 0.7; this.flash = 0.25; }

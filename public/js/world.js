@@ -27,10 +27,10 @@ export class World {
     this.rubbleMat = new THREE.MeshStandardMaterial({ color: 0x4a4458, roughness: 1, flatShading: true });
     this.laneMats = {};
     for (const b of BIOMES) {
-      this.laneMats[b.id] = new THREE.MeshBasicMaterial({ map: textures.laneRune, color: b.accent, transparent: true, opacity: 0.32, blending: THREE.AdditiveBlending, depthWrite: false });
+      this.laneMats[b.id] = new THREE.MeshBasicMaterial({ map: textures.laneRune, color: b.accent, transparent: true, opacity: 0.5, depthWrite: false });
     }
     textures.laneRune.repeat.set(1, SEG_LEN / 4);
-    this.lavaMat = new THREE.MeshBasicMaterial({ color: 0xff5a1f, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false });
+    this.lavaMat = new THREE.MeshBasicMaterial({ color: 0xff7a2f, transparent: true, opacity: 0.8, depthWrite: false });
 
     this.coinMesh = M.buildCoinMesh(textures.coin, COIN_CAP);
     this.root.add(this.coinMesh);
@@ -153,7 +153,7 @@ export class World {
     }
     const bw = new THREE.Mesh(M.boxGeo(0.8, wallH, gapW + 2.4), m.wall); bw.position.set(side * (xIn + depth + 0.4), wallH / 2, zc); g.add(bw);
     // glowing "way onward" portal on the back wall + a torch inside
-    const portal = new THREE.Sprite(S.glowSprite(biome.accent, 0.8)); portal.scale.set(5.5, 6.5, 1); portal.position.set(side * (xIn + depth - 0.4), 2.6, zc); g.add(portal);
+    const portal = new THREE.Sprite(S.glowSprite(biome.accent, 0.8)); portal.scale.set(4.5, 5.5, 1); portal.position.set(side * (xIn + depth - 0.4), 2.6, zc); g.add(portal);
     const t = M.buildTorch(S, biome.torch); t.position.set(side * (xIn + 0.6), 2.6, zc - gapW / 2 - 0.1); g.add(t);
     this.torches.push({ s: g.userData.s0 + oz + gapW / 2, x: side * (xIn + 1), obj: t, color: biome.torch, noLight: true });
     if (rand() < 0.7) {
@@ -351,7 +351,7 @@ export class World {
     // ---- power-up between rows
     this.sincePickup += gap;
     if (!this.flying && s > 250 && this.sincePickup > 650 && R() < 0.4) {
-      const bag = ['magnet', 'magnet', 'double', 'double', 'boots', 'boots', 'wings', 'shield', 'shield'];
+      const bag = ['magnet', 'magnet', 'double', 'double', 'boots', 'boots', 'wings', 'jetpack', 'jetpack', 'shield', 'shield'];
       this.addPickup(bag[Math.floor(R() * bag.length)], newPath, s + gap * 0.5);
       this.sincePickup = 0;
     }
@@ -433,7 +433,7 @@ export class World {
       if (!t) { l.intensity = 0; return; }
       l.color.set(t.color);
       l.position.set(t.x, t.y !== undefined ? t.y : 3.4, -(t.s - dist));
-      l.intensity = (t.lantern ? 14 : 18) * (0.92 + Math.sin(time * 13 + i * 2.1) * 0.08);
+      l.intensity = (t.lantern ? 4 : 6) * (0.92 + Math.sin(time * 13 + i * 2.1) * 0.08);
     });
   }
 }

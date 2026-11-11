@@ -11,7 +11,7 @@ void main(){ vec2 p = gl_PointCoord - 0.5; float d = length(p); if(d>0.5) discar
   float a = smoothstep(0.5, 0.0, d); gl_FragColor = vec4(vColor.rgb, vColor.a * a * a * 1.6); }`;
 
 function pointsMaterial(scale) {
-  return new THREE.ShaderMaterial({ vertexShader: VS, fragmentShader: FS, uniforms: { scale: { value: scale } }, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false });
+  return new THREE.ShaderMaterial({ vertexShader: VS, fragmentShader: FS, uniforms: { scale: { value: scale } }, transparent: true, depthWrite: false, fog: false });
 }
 
 /** CPU particle pool rendered as one Points draw call. */
@@ -121,15 +121,17 @@ export function buildSky(topColor, bottomColor) {
     vertexShader: 'varying vec3 vDir; void main(){ vDir = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
     fragmentShader: `
       varying vec3 vDir; uniform vec3 top; uniform vec3 bottom; uniform float time; uniform float stars;
-      float hash(vec3 p){ p = fract(p*0.3183099+0.1); p*=17.0; return fract(p.x*p.y*p.z*(p.x+p.y+p.z)); }
+      float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+      float noise(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f);
+        return mix(mix(hash(i), hash(i+vec2(1,0)), f.x), mix(hash(i+vec2(0,1)), hash(i+vec2(1,1)), f.x), f.y); }
+      float fbm(vec2 p){ float v = 0.0, a = 0.5; for(int i=0;i<4;i++){ v += a*noise(p); p *= 2.03; a *= 0.5; } return v; }
       void main(){
-        float h = clamp(vDir.y*1.4+0.15, 0.0, 1.0);
-        vec3 c = mix(bottom, top, pow(h, 0.7));
-        vec3 q = floor(vDir*260.0); float r = hash(q);
-        float tw = 0.6+0.4*sin(time*2.0+r*60.0);
-        float st = step(0.9965, r) * tw * stars * smoothstep(0.1,0.45,vDir.y);
-        c += vec3(st);
-        gl_FragColor = vec4(c,1.0);
+        float h = clamp(vDir.y*1.5+0.12, 0.0, 1.0);
+        vec3 c = mix(bottom, top, pow(h, 0.65));
+        vec2 uv = vDir.xz / (vDir.y + 0.35) * 1.6 + vec2(time*0.012, 0.0);
+        float cl = smoothstep(0.52, 0.85, fbm(uv)) * smoothstep(0.02, 0.3, vDir.y);
+        c = mix(c, vec3(1.0), cl * 0.85);
+        gl_FragColor = vec4(c, 1.0);
       }`,
   });
   const m = new THREE.Mesh(new THREE.SphereGeometry(420, 32, 16), mat);
