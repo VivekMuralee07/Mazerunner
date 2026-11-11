@@ -1,0 +1,12 @@
+# Render Blueprint – deploys Labyrinth Run as a Node web service on the Starter plan.
+# Dashboard alternative: New + > Web Service > connect this repo >
+#   Runtime: Node, Build Command: (empty / npm install), Start Command: npm start
+services:
+  - type: web
+    name: mazerunner
+    runtime: node
+    plan: starter
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /healthz
+    autoDeploy: true

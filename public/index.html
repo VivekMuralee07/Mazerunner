@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0b1a14">
+<meta name="description" content="Labyrinth Run – outrun the Minotaur through an endless, ever-shifting maze. A Subway Surfers-style 3D runner.">
+<title>Labyrinth Run – Maze Runner</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230b1a14'/%3E%3Cpath d='M12 52V12h40v32H28V28h12' fill='none' stroke='%23ffc933' stroke-width='6' stroke-linecap='square'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="css/style.css">
+<script type="importmap">
+{ "imports": { "three": "./vendor/three/three.module.js", "three/addons/": "./vendor/three/addons/" } }
+</script>
+</head>
+<body>
+<canvas id="game" aria-label="Labyrinth Run game canvas"></canvas>
+<div id="vignette"></div>
+<div id="flash"></div>
+
+<!-- LOADING -->
+<section id="loading" class="screen show">
+  <div class="logo small"><span>LABYRINTH</span><b>RUN</b></div>
+  <div class="loadbar"><i id="loadfill"></i></div>
+  <p id="loadtext">Carving the corridors…</p>
+  <p id="loaderror" class="hidden"></p>
+</section>
+
+<!-- HUD -->
+<section id="hud" class="hidden">
+  <div class="hud-tl">
+    <div id="score">0</div>
+    <div class="hud-row"><span id="mult" class="chip">×1</span><span id="dist" class="chip dim">0 m</span></div>
+  </div>
+  <div class="hud-tr">
+    <div id="coins" class="coinbox"><i class="coin"></i><span id="coinCount">0</span></div>
+    <button id="btnPause" class="iconbtn" aria-label="Pause">❚❚</button>
+  </div>
+  <div id="powerups"></div>
+  <div id="biomeBanner"></div>
+  <div id="countdown"></div>
+  <div id="toasts"></div>
+  <div id="tutorial" class="hidden">
+    <div class="tut"><span class="key">← →</span><small>Switch lane</small></div>
+    <div class="tut"><span class="key">↑</span><small>Jump</small></div>
+    <div class="tut"><span class="key">↓</span><small>Roll</small></div>
+    <div class="tut touch"><span class="key">Swipe</span><small>any direction</small></div>
+  </div>
+</section>
+
+<!-- MAIN MENU -->
+<section id="menu" class="screen">
+  <div class="menu-top">
+    <div class="pill"><i class="coin"></i><span id="menuCoins">0</span></div>
+    <div class="pill dim">Best <b id="menuBest">0</b></div>
+    <div class="pill dim" id="menuRank">Multiplier ×1</div>
+  </div>
+  <div class="logo"><span>LABYRINTH</span><b>RUN</b><em>Outrun the Minotaur</em></div>
+  <div class="menu-bottom">
+    <button id="btnPlay" class="btn primary huge">PLAY</button>
+    <div class="btnrow">
+      <button id="btnShop" class="btn">Outfits &amp; Upgrades</button>
+      <button id="btnMissions" class="btn">Missions</button>
+      <button id="btnSettings" class="btn">Settings</button>
+    </div>
+    <p class="hint"><span class="desktop">← → switch lanes · ↑ jump · ↓ roll · P pause</span><span class="touchhint">Swipe to switch lanes, jump and roll</span></p>
+  </div>
+</section>
+
+<!-- PANELS -->
+<section id="shop" class="screen panel-screen">
+  <div class="panel">
+    <header><h2>Outfits &amp; Upgrades</h2><div class="pill"><i class="coin"></i><span class="walletCoins">0</span></div></header>
+    <nav class="tabs"><button class="tab active" data-tab="skins">Outfits</button><button class="tab" data-tab="upgrades">Power-ups</button></nav>
+    <div id="shopBody"></div>
+    <footer><button class="btn back">Back</button></footer>
+  </div>
+</section>
+
+<section id="missionsScreen" class="screen panel-screen">
+  <div class="panel narrow">
+    <header><h2>Missions</h2><div class="pill dim" id="missionRank">×1</div></header>
+    <p class="sub">Complete all three to raise your permanent score multiplier.</p>
+    <div id="missionList"></div>
+    <footer><button class="btn back">Back</button></footer>
+  </div>
+</section>
+
+<section id="settings" class="screen panel-screen">
+  <div class="panel narrow">
+    <header><h2>Settings</h2></header>
+    <div class="setrow"><span>Music</span><button class="toggle" id="setMusic"></button></div>
+    <div class="setrow"><span>Sound effects</span><button class="toggle" id="setSfx"></button></div>
+    <div class="setrow"><span>Graphics</span><div class="seg" id="setQuality"><button data-q="auto">Auto</button><button data-q="high">High</button><button data-q="medium">Medium</button><button data-q="low">Low</button></div></div>
+    <div class="setrow"><span>Progress</span><button class="btn danger small" id="setReset">Reset save</button></div>
+    <footer><button class="btn back">Back</button></footer>
+  </div>
+</section>
+
+<!-- PAUSE -->
+<section id="pause" class="screen panel-screen">
+  <div class="panel narrow center">
+    <h2>Paused</h2>
+    <button id="btnResume" class="btn primary">Resume</button>
+    <button id="btnRestart" class="btn">Restart</button>
+    <button id="btnQuit" class="btn">Main menu</button>
+  </div>
+</section>
+
+<!-- GAME OVER -->
+<section id="gameover" class="screen panel-screen">
+  <div class="panel center">
+    <h2 id="goTitle">Caught!</h2>
+    <p id="goCause" class="sub"></p>
+    <div id="goScore">0</div>
+    <div id="goBest" class="newbest hidden">★ NEW BEST ★</div>
+    <div class="stats">
+      <div><small>Best</small><b id="goBestVal">0</b></div>
+      <div><small>Distance</small><b id="goDist">0 m</b></div>
+      <div><small>Coins</small><b id="goCoins">0</b></div>
+    </div>
+    <div id="goMissions"></div>
+    <div class="btnrow vertical">
+      <button id="btnRevive" class="btn gold">Revive <span id="reviveCost"></span></button>
+      <button id="btnAgain" class="btn primary">Run again</button>
+      <button id="btnMenu" class="btn">Main menu</button>
+    </div>
+  </div>
+</section>
+
+<noscript><p style="color:#fff;padding:2rem">Labyrinth Run needs JavaScript and WebGL to run.</p></noscript>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
