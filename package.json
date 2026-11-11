@@ -1,0 +1,17 @@
+{
+  "name": "mazerunner",
+  "version": "1.0.0",
+  "description": "Labyrinth Run – a Subway Surfers-style 3D endless runner set inside a living maze.",
+  "private": true,
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "test": "node scripts/smoke-test.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT"
+}
