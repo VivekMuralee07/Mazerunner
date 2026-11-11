@@ -1,0 +1,8 @@
+[{
+      "relation": ["delegate_permission/common.handle_all_urls"],
+      "target": {
+        "namespace": "android_app",
+        "package_name": "com.vivek.mazerunner_xc7l.twa",
+        "sha256_cert_fingerprints": ["61:DE:29:A6:75:6F:3B:2D:2E:A4:4E:65:40:F9:0D:98:F1:F0:C6:B0:38:3D:27:ED:4F:C0:C2:F3:68:06:FA:E5"]
+      }
+    }]
