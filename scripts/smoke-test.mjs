@@ -360,6 +360,10 @@ try {
       }
       const cur = p.target; let want = cur;
       if (!safe[1][cur]) for (const m of [cur - 1, cur + 1]) if (m >= 0 && m <= 2 && canEnter(m, g.dist) && safe[1][m]) { want = m; break; }
+      const LX = [-2.4, 0, 2.4], bl = w.solids.find((sd) => sd.type === 'boulder' && !sd.ghost && sd.locked && sd.s1 > g.dist - 1);
+      if (bl && bl.s0 - g.dist < 28 && Math.abs(LX[cur] - bl.x) < 1.6) {            // sidestep a boulder that has locked onto our lane
+        for (const m of [cur - 1, cur + 1]) if (m >= 0 && m <= 2 && Math.abs(LX[m] - bl.x) > 1.8 && !fatal(m, g.dist + 3) && canEnter(m, g.dist)) { want = m; break; }
+      }
       if (want !== cur) g.action(want < cur ? 'left' : 'right');
       let near = null;
       for (const sd of sols) if (sd.lane === p.target && (sd.type === 'low' || sd.type === 'high')) { const d = sd.s0 - g.dist; if (d > -0.3 && (!near || d < near.d)) near = { d, type: sd.type }; }

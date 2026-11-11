@@ -313,7 +313,7 @@ export class World {
     if (this.skyS < dist + 22) { this.skyS = dist + 22; }
     while (this.skyS < aheadTo) {
       this.skyPhase += 0.085;
-      const x = Math.sin(this.skyPhase) * 2.5, y = 8.7 + Math.sin(this.skyPhase * 1.9) * 0.6;
+      const x = Math.sin(this.skyPhase) * 2.5, y = 10.4 + Math.sin(this.skyPhase * 1.9) * 0.7;
       this.addCoin(this.skyS, x, y, { scale: 1.45 });
       this.addCoin(this.skyS, -x, y, { scale: 1.45 });
       this.skyS += 2.7;

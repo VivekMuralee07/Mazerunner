@@ -485,7 +485,7 @@ export class Game {
     if (magnet) {
       for (const c of w.coins) {
         const ds = c.s - this.dist;
-        if (ds > -2 && ds < 22 && Math.abs(c.x - p.x) < (p.flying ? 3.4 : 9) && (!p.flying || Math.abs(c.y - cy) < 4)) {
+        if (ds > -2 && ds < 22 && Math.abs(c.x - p.x) < (p.flying ? 3.4 : 9) && (!p.flying || Math.abs(c.y - cy) < 5)) {
           const k = damp(p.flying ? 5 : 7, dt);
           c.x += (p.x - c.x) * k; c.y += (cy - c.y) * k; c.s += (this.dist + 0.2 - c.s) * k * 0.9;
         }
@@ -495,7 +495,7 @@ export class Game {
     for (let i = coins.length - 1; i >= 0; i--) {
       const c = coins[i];
       if (c.s < prevDist - 0.6 || c.s > this.dist + 0.7) continue;
-      if (Math.abs(c.x - p.x) < (p.flying ? 1.7 : 0.85) && Math.abs(c.y - cy) < (p.flying ? 2.6 : 1.15)) {
+      if (Math.abs(c.x - p.x) < (p.flying ? 1.7 : 0.85) && Math.abs(c.y - cy) < (p.flying ? 3.6 : 1.15)) {
         coins.splice(i, 1);
         this.runCoins++; this.stats.coins = this.runCoins;
         this.score += 10 * this.mult;
