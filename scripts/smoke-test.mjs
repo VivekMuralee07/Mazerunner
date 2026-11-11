@@ -195,6 +195,15 @@ try {
   check('settings toggles persist', r === false);
   await page.click('#settings .back');
 
+  console.log('PWA');
+  const man = await page.evaluate(async () => { const r = await fetch('/manifest.webmanifest'); const m = await r.json(); const ok = await Promise.all(m.icons.map((i) => fetch(i.src).then((x) => x.ok))); return { name: m.name, display: m.display, icons: ok }; });
+  check('web manifest is served and all its icons exist', man.name === 'Labyrinth Run' && man.icons.every(Boolean), JSON.stringify(man));
+  await page.evaluate(() => navigator.serviceWorker.ready);
+  check('service worker is active', await page.evaluate(() => !!navigator.serviceWorker.controller || !!navigator.serviceWorker.ready));
+  await page.waitForTimeout(1500);
+  const cached = await page.evaluate(async () => (await (await caches.open('labyrinth-run-v1')).keys()).length);
+  check('app shell is precached for offline play', cached >= 30, `${cached} files`);
+
   console.log('Pause, controls & visuals');
   await page.click('#btnPlay');
   await page.waitForFunction(() => window.__game.state === 'running', null, { timeout: 30000 });

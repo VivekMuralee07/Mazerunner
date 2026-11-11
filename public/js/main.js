@@ -33,3 +33,7 @@ boot().catch((err) => {
   console.error(err);
   ui.loadError(`Something went wrong while loading: ${err && err.message ? err.message : err}`);
 });
+
+if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+  addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => { /* offline support is optional */ }));
+}
