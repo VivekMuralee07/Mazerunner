@@ -302,3 +302,19 @@ export function buildBiomeMaterials(biomes, maxAniso = 4, onProgress) {
   }
   return out;
 }
+
+/** Soft gradients used for fake ambient occlusion and sun shafts. */
+export function shadingTextures() {
+  const mk = (w, h, paint) => { const c = canvas(w, h), x = c.getContext('2d'); paint(x, w, h); const tx = new THREE.CanvasTexture(c); tx.colorSpace = THREE.SRGBColorSpace; return tx; };
+  const aoH = mk(64, 4, (x, w, h) => { const g = x.createLinearGradient(0, 0, w, 0); g.addColorStop(0, 'rgba(10,20,10,1)'); g.addColorStop(0.35, 'rgba(10,20,10,0.45)'); g.addColorStop(1, 'rgba(10,20,10,0)'); x.fillStyle = g; x.fillRect(0, 0, w, h); });
+  const aoV = mk(4, 64, (x, w, h) => { const g = x.createLinearGradient(0, 0, 0, h); g.addColorStop(0, 'rgba(10,20,10,0)'); g.addColorStop(0.6, 'rgba(10,20,10,0.35)'); g.addColorStop(1, 'rgba(10,20,10,0.95)'); x.fillStyle = g; x.fillRect(0, 0, w, h); });
+  const shaft = mk(64, 256, (x, w, h) => {
+    const img = x.createImageData(w, h);
+    for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) {
+      const u = (i / (w - 1)) * 2 - 1, v = j / (h - 1), a = Math.pow(Math.max(0, 1 - Math.abs(u)), 1.6) * Math.pow(1 - v, 0.9) * Math.min(1, v * 8);
+      const k = (j * w + i) * 4; img.data[k] = 255; img.data[k + 1] = 245; img.data[k + 2] = 215; img.data[k + 3] = Math.floor(a * 255);
+    }
+    x.putImageData(img, 0, 0);
+  });
+  return { aoH, aoV, shaft };
+}

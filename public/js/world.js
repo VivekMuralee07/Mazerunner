@@ -32,8 +32,16 @@ export class World {
     textures.laneRune.repeat.set(1, SEG_LEN / 4);
     this.lavaMat = new THREE.MeshBasicMaterial({ color: 0xff7a2f, transparent: true, opacity: 0.8, depthWrite: false });
 
-    this.coinMesh = M.buildCoinMesh(textures.coin, COIN_CAP);
-    this.root.add(this.coinMesh);
+    const cm = M.buildCoinMesh(textures.coin, COIN_CAP);
+    this.coinMesh = cm.face; this.coinRim = cm.rim;
+    this.root.add(cm.face, cm.rim);
+    // soft ambient-occlusion gradients (wall bases, floor edges) and sun shafts
+    this.aoFloorMat = new THREE.MeshBasicMaterial({ map: textures.aoH, transparent: true, opacity: 0.55, depthWrite: false });
+    this.aoWallMat = new THREE.MeshBasicMaterial({ map: textures.aoV, transparent: true, opacity: 0.6, depthWrite: false });
+    this.shaftMat = new THREE.MeshBasicMaterial({ map: textures.shaft, transparent: true, opacity: 0.5, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, color: 0xfff0c8 });
+    this.aoFloorGeo = new THREE.PlaneGeometry(1.5, 1); this.aoFloorGeo.rotateX(-Math.PI / 2);
+    this.rockMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9, flatShading: true });
+    this.deco = {};
 
     // a few real lights hop between the nearest torches
     this.torchLights = [];
@@ -54,13 +62,13 @@ export class World {
     this.path = 1; this.busy = [-1e9, -1e9, -1e9]; this.prevOcc = [true, true, true];
     this.prev = { s: dist + 10, lane: 1, type: null };
     this.sincePickup = 0; this.skyS = 0; this.skyLane = null; this.skyRun = 0; this.skyPrevX = null;
-    this.speedHint = 15; this.flying = false;
+    this.speedHint = 15; this.flying = false; this.sinceJet = 1500; this.targetX = 0; this.skyPhase = 0;
     this.biomeIdx = -1;
   }
 
   clearAll() {
     for (const c of [this.segRoot, this.obstacleRoot, this.pickupRoot]) while (c.children.length) c.remove(c.children[0]);
-    if (this.coinMesh) this.coinMesh.count = 0;
+    if (this.coinMesh) this.coinMesh.count = this.coinRim.count = 0;
   }
 
   // ---------------------------------------------------------------- segments
@@ -100,6 +108,8 @@ export class World {
         w.castShadow = true; w.receiveShadow = true; add(w);
         const cap = at(new THREE.Mesh(M.boxGeo(wallT + 0.5, 0.45, b - a + 0.05), m.trim), side * (CORRIDOR_HALF + wallT / 2), wallH + 0.2, -(a + b) / 2); add(cap);
         const base = at(new THREE.Mesh(M.boxGeo(0.4, 0.55, b - a), m.trim), side * (CORRIDOR_HALF - 0.15), 0.27, -(a + b) / 2); base.receiveShadow = true; add(base);
+        const aoF = new THREE.Mesh(this.aoFloorGeo, this.aoFloorMat); aoF.scale.set(side < 0 ? 1 : -1, 1, b - a); aoF.position.set(side * (CORRIDOR_HALF - 0.74), 0.025, -(a + b) / 2); add(aoF);
+        const aoW = new THREE.Mesh(this.aoWallGeo || (this.aoWallGeo = new THREE.PlaneGeometry(1, 2.6)), this.aoWallMat); aoW.scale.x = b - a; aoW.rotation.y = side > 0 ? -Math.PI / 2 : Math.PI / 2; aoW.position.set(side * (CORRIDOR_HALF - 0.03), 1.3, -(a + b) / 2); add(aoW);
       }
       if (oz != null) this.buildAlcove(g, side, oz, gapW, wallH, wallT, biome, m, rand);
     }
@@ -136,9 +146,49 @@ export class World {
         d.position.set(x, 0, -z); d.rotation.y = rand() * 6; add(d);
       }
     }
+    this.addWallDecor(g, biome, rand, openings);
+    if (rand() < 0.45) {                                   // sun shafts slanting into the corridor
+      for (let k = 0; k < 2; k++) {
+        const sh = new THREE.Mesh(this.shaftGeo || (this.shaftGeo = new THREE.PlaneGeometry(3.2, 11)), this.shaftMat);
+        sh.position.set(-1.6 + k * 1.2, 4.4, -(3 + rand() * 18)); sh.rotation.set(0, (rand() - 0.5) * 0.4, 0.55); add(sh);
+      }
+    }
     g.position.z = -(s0 - this.dist);
     this.segRoot.add(g);
     return g;
+  }
+
+  /** Instanced silhouette decor so the walls aren't flat boxes: bumpy hedges, battlements, crystal spires, rock fins. */
+  addWallDecor(g, biome, rand, openings) {
+    const D = this.deco, items = [], wallH = 7.2;
+    const ok = (side, z) => openings[side] == null || z < openings[side] - 0.8 || z > openings[side] + 5.2;
+    let geo, mat, colors = null;
+    if (biome.id === 'hedge') {
+      geo = D.hedgeGeo || (D.hedgeGeo = new THREE.IcosahedronGeometry(0.55, 1)); mat = D.hedgeMat || (D.hedgeMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.95, flatShading: true }));
+      colors = [0x2f9a3c, 0x3cb04d, 0x4cc85e, 0x63da70, 0x27843a];
+      for (const side of [-1, 1]) {
+        for (let i = 0; i < 26; i++) { const z = rand() * 24; if (ok(side, z)) items.push({ x: side * (CORRIDOR_HALF - 0.06), y: 0.5 + rand() * 6.3, z: -z, sx: 0.5, sy: 0.7 + rand() * 0.7, sz: 0.8 + rand() * 0.8, side }); }
+        for (let i = 0; i < 10; i++) { const z = (i + rand() * 0.6) * 2.4; if (ok(side, z)) items.push({ x: side * (CORRIDOR_HALF + 0.8), y: wallH + 0.35, z: -z, sx: 1.5, sy: 1.1 + rand() * 0.5, sz: 1.7, side }); }
+      }
+    } else if (biome.id === 'stone') {
+      geo = D.merlonGeo || (D.merlonGeo = new THREE.BoxGeometry(1.1, 0.85, 1.5)); mat = D.merlonMat || (D.merlonMat = new THREE.MeshStandardMaterial({ color: 0xcdb99c, roughness: 0.9 }));
+      for (const side of [-1, 1]) for (let i = 0; i < 8; i++) { const z = 0.8 + i * 3; if (ok(side, z)) items.push({ x: side * (CORRIDOR_HALF + 0.8), y: wallH + 0.62, z: -z, sx: 1, sy: 1, sz: 1 }); }
+    } else if (biome.id === 'crystal') {
+      geo = D.spireGeo || (D.spireGeo = new THREE.ConeGeometry(0.4, 1, 5)); mat = D.spireMat || (D.spireMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.15, metalness: 0.3, emissive: 0x5ad0ff, emissiveIntensity: 0.55, flatShading: true }));
+      colors = [0xbfefff, 0x8fd8ff, 0xd8c8ff, 0xffffff, 0x9fe8ff];
+      for (const side of [-1, 1]) for (let i = 0; i < 12; i++) { const z = rand() * 24, h = 1.2 + rand() * 2.4; if (ok(side, z)) items.push({ x: side * (CORRIDOR_HALF + 0.5 + rand() * 0.7), y: wallH + 0.3 + h / 2, z: -z, sx: 0.8 + rand() * 0.6, sy: h, sz: 0.8 + rand() * 0.6, ry: rand() * 6, tilt: (rand() - 0.5) * 0.3 }); }
+    } else {
+      geo = D.finGeo || (D.finGeo = new THREE.ConeGeometry(0.55, 1, 4)); mat = D.finMat || (D.finMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.95, flatShading: true }));
+      colors = [0xc98a63, 0xb87752, 0xd9a07a, 0xa86a48];
+      for (const side of [-1, 1]) for (let i = 0; i < 12; i++) { const z = rand() * 24, h = 1 + rand() * 2.2; if (ok(side, z)) items.push({ x: side * (CORRIDOR_HALF + 0.5 + rand() * 0.8), y: wallH + 0.3 + h / 2, z: -z, sx: 0.9 + rand() * 0.9, sy: h, sz: 0.9 + rand() * 0.9, ry: rand() * 6, tilt: (rand() - 0.5) * 0.4 }); }
+    }
+    if (!items.length) return;
+    const im = new THREE.InstancedMesh(geo, mat, items.length), d = this.dummy, c = new THREE.Color();
+    items.forEach((it, i) => {
+      d.position.set(it.x, it.y, it.z); d.rotation.set(it.tilt || 0, it.ry || 0, 0); d.scale.set(it.sx, it.sy, it.sz); d.updateMatrix(); im.setMatrixAt(i, d.matrix);
+      if (colors) { c.setHex(colors[Math.floor(rand() * colors.length)]); im.setColorAt(i, c); }
+    });
+    im.castShadow = true; im.receiveShadow = true; g.add(im);
   }
 
   buildAlcove(g, side, oz, gapW, wallH, wallT, biome, m, rand) {
@@ -205,6 +255,7 @@ export class World {
       if (sd.ghost || sd.ignore || sd.s1 + PD < dist || sd.s0 - PD > dist) continue;
       const dx = Math.abs(px - sd.x);
       if (dx >= sd.hw + PW) continue;
+      if (sd.type === 'boulder') { if (py < sd.H - 0.2) hits.push({ sd, kind: 'front' }); continue; }
       if (sd.type === 'high') {
         if (py < sd.yTop && py + ph > sd.yBot) hits.push({ sd, kind: dx > sd.hw - 0.2 || sd.lane === enteredLane || (ownLane >= 0 && sd.lane !== ownLane) ? 'side' : 'front' });
         continue;
@@ -215,6 +266,16 @@ export class World {
     }
     return { ground, hits };
   }
+
+  /** A homing boulder that rolls toward the player. It steers toward the player until it locks onto a lane. */
+  addBoulder(lane, s0, speed) {
+    const group = M.buildBoulder(this.S);
+    const sd = { type: 'boulder', lane, x: LANES[lane], s0, s1: s0 + 2.5, H: 2.8, ramp: 0, hw: 1.0, group, ghost: false, boulderSpeed: speed, locked: false, yBot: 0, yTop: 0, dust: 0 };
+    group.position.set(sd.x, 0, -(s0 - this.dist));
+    this.obstacleRoot.add(group); this.solids.push(sd);
+    return sd;
+  }
+  hasBoulder() { return this.solids.some((sd) => sd.type === 'boulder' && !sd.ghost && sd.s1 > this.dist - 6); }
 
   /** Removes (ghosts) every obstacle in a range – used when reviving. */
   clearRange(a, b) {
@@ -246,19 +307,16 @@ export class World {
     }
   }
 
-  /** Wings: a coin trail high above the maze that hops between lanes in runs you can steer into. */
+  /** Flight: two mirrored coin ribbons that weave across the lanes high above the maze, in big, visible, flowing waves. */
   spawnSkyCoins(dist) {
-    const aheadTo = dist + 90;
-    if (this.skyS < dist + 25) { this.skyS = dist + 25; this.skyLane = this.skyLane ?? 1; this.skyRun = 0; }
+    const aheadTo = dist + 100;
+    if (this.skyS < dist + 22) { this.skyS = dist + 22; }
     while (this.skyS < aheadTo) {
-      if (this.skyRun <= 0) {
-        const opts = [this.skyLane - 1, this.skyLane + 1].filter((l) => l >= 0 && l <= 2);
-        if (this.rand() < 0.75) this.skyLane = opts[Math.floor(this.rand() * opts.length)];
-        this.skyRun = 6 + Math.floor(this.rand() * 4);
-      }
-      const x = LANES[this.skyLane], prevX = this.skyPrevX ?? x, k = this.skyRun > 4 ? 0 : 1;
-      this.addCoin(this.skyS, x, 5.4);
-      this.skyPrevX = x; this.skyRun--; this.skyS += 2.2;
+      this.skyPhase += 0.085;
+      const x = Math.sin(this.skyPhase) * 2.5, y = 8.7 + Math.sin(this.skyPhase * 1.9) * 0.6;
+      this.addCoin(this.skyS, x, y, { scale: 1.45 });
+      this.addCoin(this.skyS, -x, y, { scale: 1.45 });
+      this.skyS += 2.7;
     }
   }
 
@@ -349,15 +407,37 @@ export class World {
     }
 
     // ---- power-up between rows
-    this.sincePickup += gap;
-    if (!this.flying && s > 250 && this.sincePickup > 650 && R() < 0.4) {
-      const bag = ['magnet', 'magnet', 'double', 'double', 'boots', 'boots', 'wings', 'jetpack', 'jetpack', 'shield', 'shield'];
+    this.sincePickup += gap; this.sinceJet += gap;
+    if (!this.flying && s > 250 && this.sinceJet > 3200 && R() < 0.4) {          // jetpacks are rare: roughly once per 3+ km
+      this.addPickup('jetpack', newPath, s + gap * 0.5);
+      this.sinceJet = 0; this.sincePickup = 0;
+    } else if (!this.flying && s > 250 && this.sincePickup > 650 && R() < 0.4) {
+      const bag = ['magnet', 'magnet', 'double', 'double', 'boots', 'boots', 'wings', 'shield', 'shield'];
       this.addPickup(bag[Math.floor(R() * bag.length)], newPath, s + gap * 0.5);
       this.sincePickup = 0;
     }
 
     this.prev = { s, lane: newPath, type: pathType };
     this.spawnS = s + gap;
+  }
+
+  stepBoulder(sd, dt, dist, speed) {
+    sd.s0 -= sd.boulderSpeed * dt; sd.s1 = sd.s0 + 2.5;
+    const ahead = sd.s0 - dist;
+    if (!sd.locked && ahead > 30) sd.x += clamp(this.targetX - sd.x, -3.6 * dt, 3.6 * dt);          // homing...
+    else {                                                                                            // ...until the last moment
+      sd.locked = true;
+      let best = 0; for (let l = 1; l < 3; l++) if (Math.abs(LANES[l] - sd.x) < Math.abs(LANES[best] - sd.x)) best = l;
+      sd.lane = best; sd.x += clamp(LANES[best] - sd.x, -9 * dt, 9 * dt);
+    }
+    const u = sd.group.userData;
+    u.rock.rotation.x += ((speed + sd.boulderSpeed) * dt) / 1.25;
+    u.mark.material.opacity = ahead > 2 ? 0.5 + Math.sin(performance.now() * 0.012) * 0.35 : 0;
+    u.mark.scale.y = clamp(ahead / 30, 0.05, 1); u.mark.position.z = 15 * u.mark.scale.y;
+    for (const o of this.solids) {                                                                    // it flattens whatever is in its way
+      if (o === sd || o.ghost || o.type === 'boulder') continue;
+      if (o.s1 > sd.s0 && o.s0 < sd.s1 && Math.abs(o.x - sd.x) < 1.5) this.smash(o);
+    }
   }
 
   // ---------------------------------------------------------------- per-frame
@@ -380,9 +460,12 @@ export class World {
 
     // solids
     for (let i = this.solids.length - 1; i >= 0; i--) {
-      const sd = this.solids[i], z = -(sd.s0 - dist);
+      const sd = this.solids[i];
+      if (sd.type === 'boulder' && !sd.ghost) this.stepBoulder(sd, dt, dist, speed);
+      const z = -(sd.s0 - dist);
       if (sd.s1 < dist - 14) { this.obstacleRoot.remove(sd.group); this.solids.splice(i, 1); continue; }
       sd.group.position.z = z;
+      if (sd.type === 'boulder') sd.group.position.x = sd.x;
       if (sd.smashT) {          // ghosted-by-shield obstacles shrink away
         sd.smashT += dt * 3;
         const k = Math.max(0, 1 - sd.smashT);
@@ -401,10 +484,10 @@ export class World {
       if (z < -VIEW_AHEAD) continue;
       d.position.set(c.x, c.y + Math.sin(time * 3 + c.spin) * 0.06, z);
       d.rotation.set(0, time * 3.2 + c.spin, 0);
-      const sc = c.shrink != null ? c.shrink : 1; d.scale.setScalar(sc);
-      d.updateMatrix(); im.setMatrixAt(n++, d.matrix);
+      d.scale.setScalar(c.scale || 1);
+      d.updateMatrix(); im.setMatrixAt(n, d.matrix); this.coinRim.setMatrixAt(n, d.matrix); n++;
     }
-    im.count = n; im.instanceMatrix.needsUpdate = true;
+    im.count = this.coinRim.count = n; im.instanceMatrix.needsUpdate = this.coinRim.instanceMatrix.needsUpdate = true;
 
     // pickups
     for (let i = this.pickups.length - 1; i >= 0; i--) {
