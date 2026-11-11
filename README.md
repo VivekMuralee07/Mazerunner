@@ -1,6 +1,6 @@
 # Labyrinth Run 🏃‍♂️🐂
 
-A **Subway Surfers–style 3D endless runner set inside a living maze**. Dash down torch-lit corridors, dodge
+A **Subway Surfers–style 3D endless runner set inside a living maze**. Dash down sunlit hedge, ruin, crystal and canyon corridors, dodge
 stone gates, slide under spike beams, leap onto slabs and outrun the Minotaur — all rendered in real time with
 Three.js (PBR materials, dynamic shadows, bloom, fog, particles) and **no asset downloads**: every texture,
 model and sound is generated procedurally.
@@ -29,13 +29,14 @@ model and sound is generated procedurally.
   Stay clean for ~7 seconds and it falls back again.
 * **Coins** are everywhere: lines, jump arcs, and rewards on top of slabs. Coins are your currency.
 * **Power-ups** (found in the maze) – upgradable in the shop:
-  🧲 Magnet · ✖2 Double Points · 👢 Spring Boots (super jump) · 🪽 Wings (fly above the maze collecting a sky-coin trail, invulnerable) · 🛡 Spirit Shield (absorbs one crash).
+  🧲 Magnet · ✖2 Double Points · 👢 Spring Boots (super jump) · 🪽 Wings (fly above the maze for a few seconds) · 🚀 **Jetpack (15 seconds of invulnerable flight, collecting a sky-coin trail)** · 🛡 Spirit Shield (absorbs one crash).
 * **Missions** – three at a time. Finish all three to raise your **permanent score multiplier** (up to ×10) and earn coin rewards.
 * **Revive** after a crash by paying coins (price doubles each time, up to 3 revives per run).
 * **Shop** – 6 outfits and 4 power-up upgrade tracks (5 levels each).
 * **Four biomes** that blend into each other every 1.5 km: *Overgrown Maze → Forgotten Ruins → Crystal Depths → Ember Halls*,
   each with its own materials, lighting, fog, sky and decor. Side openings and arches make the corridor feel like a maze.
-* Progress (coins, best score, outfits, upgrades, missions, settings) is saved in `localStorage`.
+* **Colour-coded obstacles** stand out from the muted maze: orange/black hazard barriers (jump), red/white spike beams (roll), crimson sealed gates (dodge), teal chevron slabs (ride).
+* **Persistent stats.** Progress (coins, best score, lifetime stats, outfits, upgrades, missions, settings) is saved on the device (`localStorage` + an IndexedDB mirror, with a persistent-storage request) **and** on the server, keyed by an anonymous player id. Players can see a **leaderboard**, set a nickname, and use their **recovery code** (Settings) to restore progress after switching phones or clearing data.
 
 The generator enforces a **fairness invariant**: wherever you happen to be standing, the next row of obstacles always leaves
 a way through, so you can never be handed an unavoidable crash.
@@ -68,6 +69,16 @@ No build step, no `npm install` needed (there are no dependencies). Three.js r18
 Render injects `PORT`; the server binds `0.0.0.0:$PORT`. Static assets are gzip-compressed and cached (vendored libs for a day,
 game code revalidated with ETags, so new deploys show up immediately).
 
+## Persistent player data (Render disk)
+
+The server stores player saves in `$DATA_DIR/players.json` (default `./data`). On Render this needs a **Disk**, otherwise the file is
+wiped on every deploy (players still keep their on-device copy and can re-sync). `render.yaml` already declares it
+(`/var/data`, 1 GB, `DATA_DIR=/var/data`). If you created the service by hand: **Service → Disks → Add Disk** (mount path `/var/data`)
+and add the env var `DATA_DIR=/var/data`. Disks are available on paid plans such as Starter.
+
+API (same origin): `PUT/GET /api/save/:uuid`, `GET /api/leaderboard?id=:uuid`. Inputs are validated, bodies capped at 24 KB,
+names sanitised and requests rate-limited per IP.
+
 ## Install as an app / build an Android APK
 
 The game is a PWA (manifest, icons, offline service worker), so players can use "Add to Home Screen" / "Install app".
@@ -94,7 +105,7 @@ public/
     fx.js              GPU-friendly particles, ambient embers, starry sky shader
     audio.js           synthesised SFX and a procedural score that intensifies with speed
     input.js           keyboard + swipe controls
-    ui.js missions.js storage.js config.js
+    ui.js missions.js storage.js cloud.js config.js
   vendor/three/        Three.js + post-processing addons
 scripts/smoke-test.mjs end-to-end test-suite (see below)
 ```

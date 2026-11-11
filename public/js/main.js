@@ -4,6 +4,7 @@ import { Input } from './input.js';
 import * as Audio from './audio.js';
 import * as Store from './storage.js';
 import * as Missions from './missions.js';
+import * as Cloud from './cloud.js';
 
 const ui = new UI();
 // a clicked button must not keep keyboard focus, otherwise Space/Enter would re-trigger it mid-run
@@ -15,7 +16,10 @@ function webglOk() {
 }
 
 async function boot() {
+  await Store.restoreFromMirror();
   Store.load(); Missions.ensure();
+  Store.requestPersistence();
+  Cloud.init();
   if (!webglOk()) { ui.loadError('Your browser does not support WebGL. Please try an up-to-date Chrome, Edge, Firefox or Safari.'); return; }
   const game = new Game(canvas, ui);
   window.__game = game;                    // handy for debugging / automated tests

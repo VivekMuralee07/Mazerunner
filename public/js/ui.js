@@ -2,6 +2,7 @@ import { SKINS, POWERUPS, MAX_UPGRADE, MAX_MULTIPLIER } from './config.js';
 import * as Store from './storage.js';
 import * as Audio from './audio.js';
 import * as Missions from './missions.js';
+import * as Cloud from './cloud.js';
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -25,6 +26,7 @@ export class UI {
     click('#btnShop', () => this.openPanel('shop'));
     click('#btnMissions', () => this.openPanel('missionsScreen'));
     click('#btnSettings', () => this.openPanel('settings'));
+    click('#btnBoard', () => this.openPanel('board'));
     $$('.back').forEach((b) => b.addEventListener('click', () => { Audio.sfx.click(); this.closePanels(); }));
     $$('.tab').forEach((t) => t.addEventListener('click', () => { Audio.sfx.click(); this.shopTab = t.dataset.tab; this.renderShop(); }));
     click('#btnPause', () => this.game.pause());
@@ -41,6 +43,18 @@ export class UI {
       Audio.sfx.click(); const s = Store.get().settings; s.quality = b.dataset.q; Store.save();
       this.game.applyQuality(s.quality === 'auto' ? (this.game.isMobile ? 'medium' : 'high') : s.quality); this.renderSettings();
     }));
+    $('#setName').addEventListener('change', (e) => {
+      const s = Store.get().settings; s.name = e.target.value.replace(/[<>&"'\u0000-\u001f]/g, '').trim().slice(0, 16); e.target.value = s.name; Store.save();
+    });
+    click('#setCopy', async () => { try { await navigator.clipboard.writeText(Cloud.playerId()); this.setMsg('Recovery code copied.'); } catch { this.setMsg('Select the code and copy it manually.'); } });
+    click('#setRestoreBtn', async () => {
+      const code = $('#setRestore').value;
+      try {
+        await Cloud.restore(code);
+        const sv = Store.get(); this.game.player.setSkin(SKINS.find((k) => k.id === sv.skin) || SKINS[0]); Missions.ensure(); this.refreshMenu(); this.renderSettings();
+        $('#setRestore').value = ''; this.setMsg('Progress restored!', true);
+      } catch (e) { this.setMsg(e.message || 'Could not restore.'); }
+    });
     click('#setReset', () => {
       if (!confirm('Erase all coins, outfits, upgrades and best scores?')) return;
       Store.reset(); Missions.ensure(); this.game.player.setSkin(SKINS[0]); this.refreshMenu(); this.renderSettings();
@@ -76,11 +90,11 @@ export class UI {
 
   openPanel(id) {
     this.hide('menu'); this.show(id);
-    if (id === 'shop') this.renderShop(); if (id === 'missionsScreen') this.renderMissions(); if (id === 'settings') this.renderSettings();
+    if (id === 'shop') this.renderShop(); if (id === 'missionsScreen') this.renderMissions(); if (id === 'settings') this.renderSettings(); if (id === 'board') this.renderBoard();
   }
   closePanels() {
-    const was = ['shop', 'missionsScreen', 'settings'].some((id) => $('#' + id).classList.contains('show'));
-    ['shop', 'missionsScreen', 'settings'].forEach((id) => this.hide(id));
+    const was = ['shop', 'missionsScreen', 'settings', 'board'].some((id) => $('#' + id).classList.contains('show'));
+    ['shop', 'missionsScreen', 'settings', 'board'].forEach((id) => this.hide(id));
     if (was) { this.show('menu'); this.refreshMenu(); }
   }
 
@@ -105,7 +119,7 @@ export class UI {
       body.appendChild(grid);
     } else {
       for (const [id, def] of Object.entries(POWERUPS)) {
-        if (id === 'shield') continue;
+        if (!def.cost.length) continue;       // shield / jetpack are pick-ups only
         const lvl = s.upgrades[id] || 0, max = lvl >= MAX_UPGRADE, cost = def.cost[lvl];
         const row = document.createElement('div'); row.className = 'upg'; row.style.setProperty('--c', def.color);
         const secs = (def.base + def.step * lvl).toFixed(1);
@@ -126,8 +140,34 @@ export class UI {
       <div class="track"><i style="width:${(m.progress / m.goal) * 100}%"></i></div></div>`).join('');
   }
 
+  setMsg(text, good) { const m = $('#setMsg'); m.textContent = text; m.style.color = good ? '#07705e' : ''; }
+
+  async renderBoard() {
+    const lt = Store.get().lifetime, sv = Store.get();
+    const t = Math.floor(lt.time / 60), time = t >= 60 ? `${Math.floor(t / 60)}h ${t % 60}m` : `${t}m`;
+    const cell = (k, v) => `<div><small>${k}</small><b>${v}</b></div>`;
+    $('#boardStats').innerHTML = cell('Best score', fmt(sv.best)) + cell('Best run', `${fmt(sv.bestDistance)} m`) + cell('Runs', fmt(sv.totalRuns))
+      + cell('Distance', `${(lt.distance / 1000).toFixed(1)} km`) + cell('Coins found', fmt(lt.coins)) + cell('Play time', time)
+      + cell('Jumps', fmt(lt.jumps)) + cell('Rolls', fmt(lt.rolls)) + cell('Power-ups', fmt(lt.powerups));
+    const list = $('#boardList'), msg = $('#boardMsg'), rank = $('#boardRank');
+    list.innerHTML = ''; msg.textContent = 'Loading…'; rank.textContent = '—';
+    try {
+      await Cloud.push();                                   // make sure your newest score is on the board
+      const d = await Cloud.leaderboard();
+      msg.textContent = d.top.length ? '' : 'No scores yet — be the first!';
+      rank.textContent = d.rank ? `You: #${d.rank} of ${fmt(d.players)}` : 'Unranked';
+      d.top.forEach((e, i) => {
+        const li = document.createElement('li'); if (e.me) li.className = 'me';
+        li.innerHTML = '<span class="rk"></span><span class="nm"></span><span class="sc"></span>';
+        li.children[0].textContent = i + 1; li.children[1].textContent = e.name + (e.me ? ' (you)' : ''); li.children[2].textContent = `${fmt(e.best)}`;
+        li.title = `${fmt(e.distance)} m best run`; list.appendChild(li);
+      });
+    } catch { msg.textContent = 'The leaderboard is unavailable right now (are you offline?). Your stats are saved on this device.'; }
+  }
+
   renderSettings() {
     const s = Store.get().settings;
+    $('#setName').value = s.name || ''; $('#setId').textContent = Cloud.playerId(); this.setMsg('');
     $('#setMusic').classList.toggle('on', s.music); $('#setSfx').classList.toggle('on', s.sfx);
     $$('#setQuality button').forEach((b) => b.classList.toggle('on', b.dataset.q === s.quality));
   }

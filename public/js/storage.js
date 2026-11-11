@@ -13,7 +13,8 @@ const DEFAULTS = () => ({
   rank: 0,                  // permanent score multiplier level (from missions)
   missionSet: 0,
   missions: null,           // generated lazily by missions.js
-  settings: { music: true, sfx: true, quality: 'auto', tutorialDone: false },
+  lifetime: { distance: 0, coins: 0, jumps: 0, rolls: 0, powerups: 0, lanes: 0, climbs: 0, time: 0 },
+  settings: { music: true, sfx: true, quality: 'auto', tutorialDone: false, name: '' },
 });
 
 let data = null;
@@ -48,8 +49,55 @@ export function get() {
   return data || load();
 }
 
+const listeners = [];
+/** Register a callback that runs after every save (used for cloud sync). */
+export function onSave(fn) { listeners.push(fn); }
+
 export function save() {
-  try { localStorage.setItem(KEY, JSON.stringify(get())); } catch { /* ignore */ }
+  const json = JSON.stringify(get());
+  try { localStorage.setItem(KEY, json); } catch { /* ignore */ }
+  idbMirror(json);
+  for (const fn of listeners) { try { fn(); } catch { /* ignore */ } }
+}
+
+/** Replace the whole save (used when restoring from a recovery code). */
+export function replace(obj) {
+  const d = DEFAULTS();
+  merge(d, obj || {});
+  if (obj && obj.missions) d.missions = obj.missions;
+  data = d; save(); return data;
+}
+
+// ---- a second copy in IndexedDB + a request for "persistent" storage, so the browser doesn't evict progress
+const IDB = 'labyrinth-run', STORE = 'kv';
+function idb() {
+  return new Promise((resolve, reject) => {
+    if (!('indexedDB' in window)) return reject(new Error('no idb'));
+    const rq = indexedDB.open(IDB, 1);
+    rq.onupgradeneeded = () => rq.result.createObjectStore(STORE);
+    rq.onsuccess = () => resolve(rq.result);
+    rq.onerror = () => reject(rq.error);
+  });
+}
+let idbTimer = null;
+function idbMirror(json) {
+  clearTimeout(idbTimer);
+  idbTimer = setTimeout(async () => {
+    try { const db = await idb(); db.transaction(STORE, 'readwrite').objectStore(STORE).put(json, KEY); } catch { /* ignore */ }
+  }, 400);
+}
+/** Call once before load(): if localStorage was wiped but IndexedDB still has the save, bring it back. */
+export async function restoreFromMirror() {
+  try {
+    if (localStorage.getItem(KEY)) return false;
+    const db = await idb();
+    const json = await new Promise((res, rej) => { const q = db.transaction(STORE).objectStore(STORE).get(KEY); q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error); });
+    if (json) { localStorage.setItem(KEY, json); return true; }
+  } catch { /* ignore */ }
+  return false;
+}
+export async function requestPersistence() {
+  try { return navigator.storage && navigator.storage.persist ? await navigator.storage.persist() : false; } catch { return false; }
 }
 
 export function reset() {

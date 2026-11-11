@@ -10,3 +10,11 @@ services:
     startCommand: npm start
     healthCheckPath: /healthz
     autoDeploy: true
+    envVars:
+      - key: DATA_DIR
+        value: /var/data
+    # Persistent disk: player progress + leaderboard survive deploys and restarts.
+    disk:
+      name: mazerunner-data
+      mountPath: /var/data
+      sizeGB: 1

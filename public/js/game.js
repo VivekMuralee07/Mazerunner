@@ -37,7 +37,7 @@ export class Game {
 
     const renderer = this.renderer = new THREE.WebGLRenderer({ canvas: this.canvas, antialias: false, powerPreference: 'high-performance', alpha: false });
     renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFShadowMap;
-    renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.05;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 0.95;
     renderer.outputColorSpace = THREE.SRGBColorSpace;
 
     const scene = this.scene = new THREE.Scene();
@@ -47,23 +47,23 @@ export class Game {
     this.camera.position.set(0, 4.3, 7.4);
 
     // lights
-    this.hemi = new THREE.HemisphereLight(0x9fd0ff, 0x2a1a10, 1.0); scene.add(this.hemi);
+    this.hemi = new THREE.HemisphereLight(0xe6f4ff, 0xb8c79a, 1.3); scene.add(this.hemi);
     this.sun = new THREE.DirectionalLight(0xbfe6ff, 1.5); this.sun.position.set(-9, 20, 8); this.sun.target.position.set(0, 0, -14);
     this.sun.castShadow = true;
     const sc = this.sun.shadow.camera; sc.left = -13; sc.right = 13; sc.top = 40; sc.bottom = -26; sc.near = 1; sc.far = 70;
     this.sun.shadow.bias = -0.0006; this.sun.shadow.normalBias = 0.04;
     scene.add(this.sun, this.sun.target);
-    this.fill = new THREE.DirectionalLight(0xffc89a, 0.35); this.fill.position.set(6, 5, 12); scene.add(this.fill);
+    this.fill = new THREE.DirectionalLight(0xffe6c8, 0.5); this.fill.position.set(6, 5, 12); scene.add(this.fill);
 
     this.sky = buildSky(BIOMES[0].skyTop, BIOMES[0].skyBottom); scene.add(this.sky);
-    const moon = new THREE.Sprite(new THREE.SpriteMaterial({ map: Tex.glowTexture('rgba(255,255,255,1)', 'rgba(180,210,255,0)'), color: 0xdfeaff, fog: false, depthWrite: false, transparent: true }));
-    moon.scale.set(70, 70, 1); moon.position.set(-90, 150, -300); this.sky.add(moon); this.moon = moon;
+    const moon = new THREE.Sprite(new THREE.SpriteMaterial({ map: Tex.glowTexture('rgba(255,255,255,1)', 'rgba(255,240,200,0)'), color: 0xfff2c4, fog: false, depthWrite: false, transparent: true }));
+    moon.scale.set(150, 150, 1); moon.position.set(-110, 190, -300); this.sky.add(moon); this.moon = moon;
 
     // composer (MSAA render target + bloom + tone mapping)
     const rt = new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType, samples: 4 });
     this.composer = new EffectComposer(renderer, rt);
     this.composer.addPass(new RenderPass(scene, this.camera));
-    this.bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.5, 0.65, 0.82);
+    this.bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.22, 0.5, 0.98);
     this.composer.addPass(this.bloom);
     this.composer.addPass(new OutputPass());
 
@@ -136,8 +136,9 @@ export class Game {
     const save = Store.get();
     this.dist = 0; this.speed = 0; this.baseSpeed = SPEED.start; this.slowT = 0;
     this.score = 0; this.runCoins = 0; this.banked = 0;
+    this.runTime = 0;
     this.stats = { distance: 0, coins: 0, jumps: 0, rolls: 0, powerups: 0, lanes: 0, climbs: 0, score: 0 };
-    this.timers = { magnet: 0, double: 0, boots: 0, wings: 0 }; this.shield = false;
+    this.timers = { magnet: 0, double: 0, boots: 0, wings: 0, jetpack: 0 }; this.shield = false;
     this.flyWarn = false; this.revives = 0; this.shake = 0; this.notified = new Set();
     this.dustT = 0; this.stepT = 0; this.growlT = 6;
     this.world.reset((Math.random() * 1e9) | 0, 0);
@@ -260,15 +261,16 @@ export class Game {
     if (p.flying) target *= 1.15;
     this.speed += (target - this.speed) * damp(5, dt);
     const sp = this.speed, prev = this.dist;
-    this.dist += sp * dt;
+    this.dist += sp * dt; this.runTime += dt;
 
     // power-up timers
     const T = this.timers;
     for (const k of Object.keys(T)) if (T[k] > 0) { T[k] = Math.max(0, T[k] - dt); }
     p.boots = T.boots > 0;
-    if (p.flying && T.wings <= 0) this.endFlight();
-    this.flyWarn = T.wings > 0 && T.wings < 1.5;
-    p.setEffects({ shield: this.shield, wings: T.wings > 0, boots: T.boots > 0, magnet: T.magnet > 0 });
+    if (p.flying && T.wings <= 0 && T.jetpack <= 0) this.endFlight();
+    const flyT = Math.max(T.wings, T.jetpack);
+    this.flyWarn = flyT > 0 && flyT < 1.5;
+    p.setEffects({ shield: this.shield, wings: T.wings > 0, jetpack: T.jetpack > 0, boots: T.boots > 0, magnet: T.magnet > 0 });
     this.mult = (1 + Store.get().rank) * (T.double > 0 ? 2 : 1);
 
     const res = p.update(dt, this.dist, sp, w);
@@ -385,6 +387,9 @@ export class Game {
     save.bestDistance = Math.max(save.bestDistance, Math.floor(this.dist));
     save.totalRuns++;
     this.stats.coins = this.runCoins;
+    const lt = save.lifetime;
+    lt.distance += this.dist; lt.coins += this.runCoins; lt.time += this.runTime;
+    for (const k of ['jumps', 'rolls', 'powerups', 'lanes', 'climbs']) lt[k] += this.stats[k];
     const m = Missions.commit(this.stats);
     Store.save();
     this.ui.showGameOver({
@@ -459,7 +464,7 @@ export class Game {
     if (type === 'shield') { this.shield = true; return; }
     const lvl = save.upgrades[type] || 0;
     this.timers[type] = def.base + def.step * lvl;
-    if (type === 'wings') {
+    if (type === 'wings' || type === 'jetpack') {
       this.player.flying = true; this.world.flying = true; this.world.skyS = this.dist + 25; this.world.skyLane = this.player.target; this.world.skyRun = 8;
       this.player.rollT = 0;
     }
@@ -475,6 +480,12 @@ export class Game {
     this.dustT -= dt;
     if (p.grounded && !p.flying && this.state === STATE.RUNNING && this.dustT <= 0) { this.puff(p.x, p.groundH + 0.06, 0.1, 1); this.dustT = 0.07; }
     if (p.flying) this.particles.emit({ x: p.x + (Math.random() - 0.5) * 0.5, y: p.y + 0.9, z: 0.4, vx: (Math.random() - 0.5) * 0.6, vy: -0.4, vz: 0, life: 0.4, size: 0.14, color: 0x7fe0ff, world: true, grow: 0.4 });
+    if (this.timers.jetpack > 0) {
+      for (const sx of [-0.17, 0.17]) {
+        this.particles.emit({ x: p.x + sx + (Math.random() - 0.5) * 0.08, y: p.y + 0.65, z: 0.4, vx: (Math.random() - 0.5) * 0.8, vy: -2.5 - Math.random() * 2, vz: 0, life: 0.35, size: 0.2, color: Math.random() < 0.5 ? 0xff9a1a : 0xffe066, world: true, grow: 0.2 });
+      }
+      if (Math.random() < 0.5) this.particles.emit({ x: p.x + (Math.random() - 0.5) * 0.4, y: p.y + 0.4, z: 0.5, vx: 0, vy: -0.6, vz: 0, life: 0.7, size: 0.3, color: 0xbfc6cf, world: true, grow: 1.3 });
+    }
     if (this.timers.boots > 0 && p.grounded) this.particles.emit({ x: p.x, y: p.y + 0.1, z: 0.1, vx: 0, vy: 1.5, vz: 0, life: 0.4, size: 0.16, color: 0x37e08a, world: true });
     if (this.state === STATE.RUNNING) {
       this.stepT -= dt;
@@ -495,11 +506,11 @@ export class Game {
     this.sky.material.uniforms.top.value.copy(c('skyTop')); this.sky.material.uniforms.bottom.value.copy(c('skyBottom'));
     this.sky.material.uniforms.stars.value = A.star + (B.star - A.star) * t;
     this.sky.material.uniforms.time.value = this.time;
-    this.hemi.color.copy(c('ambient')); this.hemi.groundColor.copy(fog).multiplyScalar(0.6);
+    this.hemi.color.copy(c('ambient')); this.hemi.groundColor.copy(c('ground'));
     this.hemi.intensity = A.ambientI + (B.ambientI - A.ambientI) * t;
     this.sun.color.copy(c('sun')); this.sun.intensity = A.sunI + (B.sunI - A.sunI) * t;
     this.ambient.setColor(c('accent'));
-    this.dustColor = c('trim').offsetHSL(0, -0.1, 0.25).getHex();
+    this.dustColor = c('trim').offsetHSL(0, -0.1, -0.1).getHex();
     const idx = t > 0.5 ? (bi + 1) % BIOMES.length : bi % BIOMES.length;
     if (idx !== this.biomeIdx) { this.biomeIdx = idx; this.ui.onBiome(BIOMES[idx], this.state === STATE.RUNNING && this.dist > 50); }
   }
@@ -536,7 +547,7 @@ export class Game {
     if (Math.abs(cam.fov - fov) > 0.01) { cam.fov += (fov - cam.fov) * damp(3, dt); cam.updateProjectionMatrix(); }
 
     // keep the shadow frustum glued to the player
-    this.moon.position.set(-90, 150, -300);
+    this.moon.position.set(-110, 190, -300);
     this.sky.position.copy(cam.position);
     this.composer.render(dt);
   }
