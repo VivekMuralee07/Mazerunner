@@ -9,10 +9,11 @@ import { BIOMES, BIOME_LEN, LANES, SPEED, POWERUPS, SKINS, PLAYER, CAR } from '.
 import * as Store from './storage.js';
 import * as Audio from './audio.js';
 import * as Missions from './missions.js';
+import * as Cloud from './cloud.js';
 import * as Tex from './textures.js';
 import * as Models from './models.js';
 import { World, mulberry } from './world.js';
-import { Kaiju } from './kaiju.js';
+import { Kaiju, makePlan, encodePlan } from './kaiju.js';
 import { CORNER_HALF } from './track.js';
 import { Player } from './player.js';
 import { Chaser } from './chaser.js';
@@ -150,7 +151,7 @@ export class Game {
     const save = Store.get();
     this.dist = 0; this.speed = 0; this.baseSpeed = SPEED.start; this.slowT = 0;
     this.score = 0; this.runCoins = 0; this.banked = 0;
-    this.runTime = 0; this.boulderT = 24 + Math.random() * 14; this.boulder = null; this.rumbleT = 0; this.boulderDust = 0;
+    this.runTime = 0; this.boulderT = 24 + 14 * ((seed != null ? (this.rng = mulberry((seed ^ 0x51ed270b) >>> 0)) : (this.rng = Math.random))()); this.boulder = null; this.rumbleT = 0; this.boulderDust = 0;
     this.kaiju.dispose(); this.kaijuRand = seed != null ? mulberry((seed ^ 0x6d2b79f5) >>> 0) : Math.random; this.kaijuT = 50 + this.kaijuRand() * 20;
     this.stats = { distance: 0, coins: 0, jumps: 0, rolls: 0, powerups: 0, lanes: 0, climbs: 0, score: 0, boulders: 0, helped: 0, cars: 0 };
     this.timers = { magnet: 0, double: 0, boots: 0, wings: 0, jetpack: 0, car: 0 }; this.shield = false;
@@ -166,7 +167,21 @@ export class Game {
 
   play() {
     Audio.unlock(); Audio.startMusic();
+    this.daily = null;
     this.resetRun();
+    this.player.idle = false;
+    this.state = STATE.COUNTDOWN; this.countT = 0; this.countShown = 4;
+    this.ui.onPlay();
+  }
+
+  /** Play again in whichever mode was just played (daily or normal). */
+  replay() { if (this.daily) this.playDaily(); else this.play(); }
+
+  /** Today's daily challenge: the maze, Godzilla and boulders all come from the date's seed, so every player faces the same run. */
+  playDaily() {
+    Audio.unlock(); Audio.startMusic();
+    this.daily = Cloud.utcDay();
+    this.resetRun(true, Cloud.dailySeed(this.daily)); this.autoTurn = false;
     this.player.idle = false;
     this.state = STATE.COUNTDOWN; this.countT = 0; this.countShown = 4;
     this.ui.onPlay();
@@ -200,7 +215,7 @@ export class Game {
     this.state = STATE.COUNTDOWN; this.countT = 0; this.countShown = 4; this.resuming = true;
   }
   quitToMenu() {
-    this.state = STATE.MENU; this.resetRun(); Audio.duck(false); Audio.setIntensity(0, 0);
+    this.daily = null; this.state = STATE.MENU; this.resetRun(); Audio.duck(false); Audio.setIntensity(0, 0);
     this.ui.showMenu();
   }
 
@@ -373,7 +388,7 @@ export class Game {
       if (p.invuln > 0 && h.kind === 'front') continue;
       if (this.shield) { this.breakShield(sd); return; }
       if (sd.type === 'boulder') { this.die('boulder'); return; }
-      if (sd.type === 'flame') { this.die('burned'); return; }
+      if (sd.type === 'flame') { this.die(sd.kind === 'quake' ? 'quake' : 'burned'); return; }
       if (sd.isCornerWall) { this.die('turn'); return; }
       const fatal = h.kind === 'front' && (sd.type === 'wall' || sd.type === 'block');
       if (fatal) { this.die('crash'); return; }
@@ -425,10 +440,9 @@ export class Game {
     if (this.kaijuT > 0 || this.state !== STATE.RUNNING || p.flying || p.car || this.boulder || this.dist < 400) return;
     const T = this.world.track, s = this.dist + 170, leg = T.legAt(s);
     if (leg !== T.legAt(this.dist) || leg.b - CORNER_HALF - 14 < s + 60) { this.kaijuT = 1.5; return; }        // need a long straight run
-    const cur = p.target, pick = (a) => a[Math.floor(R() * a.length)];
-    const f1 = pick([0, 1, 2].filter((l) => l !== cur)), f2 = f1 === 1 ? pick([0, 2]) : 1;                   // wave 1 burns your lane; wave 2 forces one more step
-    const burn = (f) => [0, 1, 2].filter((l) => l !== f);
-    K.spawn(s, [burn(f1), burn(f2)], Audio.sfx);
+    const plan = makePlan(R, p.target, clamp(this.dist / 6000, 0, 1));
+    K.spawn(s, plan, Audio.sfx);
+    if (this.coop && this.coop.active) this.coop.sendKaiju(s, encodePlan(plan));                    // the rival's half replays it
     this.kaijuT = 60 + R() * 35 - clamp(this.dist / 6000, 0, 1) * 20;
   }
 
@@ -440,7 +454,7 @@ export class Game {
     if (this.boulderT <= 0 && !p.flying && !this.boulder && !this.kaiju.live && !cornerNear && this.dist > 300 && this.state === STATE.RUNNING) {
       const diff = clamp(this.dist / 6000, 0, 1);
       this.boulder = w.addBoulder(p.target, spawnS, 13 + diff * 7);
-      this.boulderT = 24 + Math.random() * 20 - diff * 8;
+      this.boulderT = 24 + this.rng() * 20 - diff * 8;
       this.ui.toast('⚠ BOULDER! Get out of its lane!', 'warn'); this.ui.flash('rgba(255,140,40,0.25)');
       Audio.sfx.rumble(); this.shake = Math.max(this.shake, 0.35);
     }
@@ -526,7 +540,7 @@ export class Game {
     if (this.coop && this.coop.active) { this.ui.showDown(false); this.ui.showCoopOver({ ...this.coop.results(), newBest, missionsSolo: m }); this.coop.end(); return; }
     this.ui.showGameOver({
       score: Math.floor(this.score), best: save.best, newBest, distance: Math.floor(this.dist), coins: this.runCoins,
-      cause: this.cause, missions: m, canRevive: this.revives < 3, reviveCost: this.reviveCost(), wallet: save.coins,
+      daily: this.daily, cause: this.cause, missions: m, canRevive: this.revives < 3, reviveCost: this.reviveCost(), wallet: save.coins,
     });
   }
 

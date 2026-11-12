@@ -4,6 +4,9 @@ import * as THREE from 'three';
 import { BIOMES } from './config.js';
 import { World } from './world.js';
 import { Ghost } from './ghost.js';
+import { Kaiju, decodePlan } from './kaiju.js';
+
+const SILENT = { kaiju() {}, flame() {}, rumble() {} };                  // the rival's Godzilla is silent: you only hear your own
 import { buildSky, makeLights, makeHills } from './fx.js';
 import { buildFx, applyFxQuality, disposeFx } from './post.js';
 
@@ -21,7 +24,8 @@ export class OpponentView {
     this.world = new World(scene, game.biomeMats, game.S, game.tex); this.world.reset(seed, 0);
     this.runner = new Ghost(name, skinId, game.S, { opaque: true }); scene.add(this.runner.holder);
     this.fx = buildFx(game.renderer, scene, this.camera);
-    this.dist = 0; this.speed = 15; this.realm = 0; this.time = 0;
+    this.dist = 0; this.speed = 15; this.realm = 0; this.time = 0; this.kaiju = null;
+    this.ctx = { time: 0, dist: 0, shake: 0, state: 'spectate', score: 0, mult: 1, stats: {}, scene, ui: { toast() {}, flash() {} } };
     this.camera.position.set(0, 3.6, 6.2); this.lookAt = new THREE.Vector3(0, 1.5, -10);
     this.world.update(0.016, 0, 15, 0);                       // build the start area so the view isn't empty before the first message
     this.applyQuality(game.cfg);
@@ -40,6 +44,13 @@ export class OpponentView {
 
   receive(m) { this.runner.receive(m); }
 
+  /** The rival's phone started a Godzilla attack: replay it in their half of the screen. */
+  spawnKaiju(s, plan) {
+    const p = decodePlan(plan); if (!p || !Number.isFinite(s) || s < this.dist - 20 || s > this.dist + 400) return;
+    if (!this.kaiju) this.kaiju = new Kaiju(this.world, this.game.S);
+    if (!this.kaiju.live) this.kaiju.spawn(s, p, SILENT);
+  }
+
   update(dt, time) {
     const R = this.runner, w = this.world, g = this.game;
     this.time = time;
@@ -53,6 +64,7 @@ export class OpponentView {
       for (let i = w.coins.length - 1; i >= 0; i--) { const k = w.coins[i]; if (Math.abs(k.s - this.dist) < 0.9 && Math.abs(k.x - R.x) < 1.3 && Math.abs(k.y - cy) < 1.5) w.coins.splice(i, 1); }
       for (let i = w.pickups.length - 1; i >= 0; i--) { const q = w.pickups[i]; if (Math.abs(q.s - this.dist) < 1.2 && Math.abs(q.x - R.x) < 1.4) { q.group.removeFromParent(); w.pickups.splice(i, 1); } }
     } else w.update(dt, 0, 15, time);
+    if (this.kaiju && this.kaiju.live) { const c = this.ctx; c.time = time; c.dist = this.dist; c.shake = 0; this.kaiju.update(dt, c); }
     R.holder.position.set(R.x, R.y, 0); R.animate(dt);
     // follow camera (same framing as the player's own)
     const fly = R.target.flying && R.target.alive, y = R.y, cam = this.camera;
@@ -70,6 +82,7 @@ export class OpponentView {
   render(dt) { this.fx.composer.render(dt); }
 
   dispose() {
+    if (this.kaiju) this.kaiju.dispose();
     this.world.clearAll(); this.world.root.removeFromParent(); this.runner.dispose();
     disposeFx(this.fx); this.scene.clear();
   }

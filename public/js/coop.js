@@ -16,8 +16,8 @@ export class Coop {
   }
 
   reset() {
-    this.partner = { alive: true, score: 0, dist: 0, stats: {}, gone: false, fin: null };
-    this.opp = null; this.missions = []; this.reward = 0; this.sendT = 0; this.stT = 0; this.checkT = 0; this.myFin = null; this.matchBonus = 0;
+    this.partner = { alive: true, score: 0, dist: 0, stats: {}, gone: false, away: false, fin: null };
+    this.opp = null; this.iWantRematch = false; this.rivalWantsRematch = false; this.forfeit = false; this.reconnecting = false; this.missions = []; this.reward = 0; this.sendT = 0; this.stT = 0; this.checkT = 0; this.myFin = null; this.matchBonus = 0;
   }
 
   // ---------------------------------------------------------------- lobby
@@ -29,24 +29,33 @@ export class Coop {
 
   connect() {
     if (this.net && this.net.open) return Promise.resolve();
-    this.net = new Net(); const n = this.net;
-    n.on.created = (m) => { this.code = m.code; this.slot = 0; this.stage = 'waiting'; this.ui.lobby(this); };
-    n.on.joined = (m) => { this.code = m.code; this.slot = 1; this.peer = m.peer; this.stage = 'ready'; this.ui.lobby(this); };
+    this.net = new Net(); this.wire(this.net);
+    return this.net.connect();
+  }
+
+  wire(n) {
+    n.on.created = (m) => { this.code = m.code; this.sid = m.sid; this.slot = 0; this.stage = 'waiting'; this.ui.lobby(this); };
+    n.on.joined = (m) => { this.code = m.code; this.sid = m.sid; this.slot = 1; this.peer = m.peer; this.stage = 'ready'; this.ui.lobby(this); };
     n.on.peer = (m) => { this.peer = m.peer; this.stage = 'ready'; this.ui.lobby(this); };
     n.on.peerLeft = () => this.onPeerLeft();
-    n.on.error = (m) => { this.error = m.msg || 'Something went wrong.'; if (this.stage === 'joining') this.stage = 'idle'; this.ui.lobby(this); };
+    n.on.peerAway = (m) => { this.partner.away = true; this.ui.toast(`${this.oppName()} lost connection: waiting up to ${Math.round((m.ms || 15000) / 1000)} s…`, 'warn', undefined, 3000); };
+    n.on.peerBack = () => { this.partner.away = false; this.ui.toast(`${this.oppName()} is back!`, 'mission', undefined, 3000); this.resendFinal(); };
+    n.on.rejoined = (m) => this.onRejoined(m);
+    n.on.rematch = () => { this.rivalWantsRematch = true; this.ui.rematchState(this); };
+    n.on.error = (m) => { this.error = m.msg || 'Something went wrong.'; if (m.fatal) this.reconnecting = false; if (this.stage === 'joining') this.stage = 'idle'; this.ui.lobby(this); };
     n.on.go = (m) => { this.game.playCoop(m.seed); };
     n.on.state = (m) => this.onState(m);
     n.on.event = (m) => this.onEvent(m);
-    n.on.close = () => this.onClose();
-    return n.connect();
+    n.on.close = () => this.onClose(n);
   }
 
   me() { const s = Store.get(); return { name: s.settings.name || 'Runner', skin: s.skin }; }
   create() { this.error = ''; this.net.send({ t: 'create', ...this.me() }); }
   join(code) { this.error = ''; this.stage = 'joining'; this.ui.lobby(this); this.net.send({ t: 'join', code, ...this.me() }); }
   start() { if (this.slot === 0 && this.stage === 'ready') this.net.send({ t: 'start' }); }
-  leave() { if (this.net) { this.net.send({ t: 'leave' }); this.net.close(); } this.net = null; this.stage = 'idle'; this.code = ''; this.peer = null; this.active = false; this.cleanupOpp(); }
+  /** Ask for another match with the same rival (it starts when both have asked). */
+  rematch() { if (!this.net || !this.net.open) return; this.iWantRematch = true; this.net.send({ t: 'rematch' }); this.ui.rematchState(this); }
+  leave() { if (this.net) { this.net.send({ t: 'leave' }); this.net.close(); } this.net = null; this.stage = 'idle'; this.code = ''; this.peer = null; this.active = false; this.reconnecting = false; this.cleanupOpp(); }
 
   onPeerLeft() {
     if (this.active) {
@@ -54,9 +63,43 @@ export class Coop {
       if (this.game.state === 'down') this.game.finishRun();
     } else { this.peer = null; this.stage = 'waiting'; this.slot = 0; this.ui.lobby(this); }
   }
-  onClose() {
-    if (this.active) { this.partner.gone = true; this.partner.alive = false; this.ui.toast('Connection lost: carrying on solo', 'warn'); if (this.game.state === 'down') this.game.finishRun(); }
+  onClose(n) {
+    if (n !== this.net) return;                                                          // an old socket
+    if (this.active) { this.net.open = false; this.startReconnect(); }
     else if (this.stage !== 'idle') { this.stage = 'idle'; this.error = 'Disconnected from the game server.'; this.ui.lobby(this); }
+  }
+
+  /** The phone lost its connection mid-match: keep playing locally and try to take the slot back for 15 s. */
+  startReconnect() {
+    if (this.reconnecting || !this.sid) { if (!this.sid) this.giveUp(); return; }
+    this.reconnecting = true; const t0 = performance.now();
+    this.ui.toast('Connection lost: reconnecting…', 'warn', undefined, 3000);
+    const attempt = async () => {
+      if (!this.reconnecting || !this.active) return;
+      if (performance.now() - t0 > 14000) return this.giveUp();
+      const n = new Net(); this.wire(n); const old = this.net; this.net = n;
+      try { await n.connect(); n.send({ t: 'rejoin', code: this.code, sid: this.sid }); } catch { n.close(); this.net = old; setTimeout(attempt, 1200); return; }
+      old && old.close();
+      setTimeout(() => { if (this.reconnecting && this.net === n && this.active) { n.close(); this.net = old; attempt(); } }, 4000);      // no "rejoined" answer: try again
+    };
+    attempt();
+  }
+
+  giveUp() {
+    this.reconnecting = false; this.forfeit = true;
+    this.ui.toast('Could not reconnect: the match is lost', 'warn', undefined, 3000);
+    if (this.game.state === 'down') this.game.finishRun();
+  }
+
+  onRejoined(m) {
+    this.reconnecting = false; if (m.peer) this.peer = m.peer;
+    this.ui.toast('Reconnected!', 'mission', undefined, 3000); this.sendT = 1; this.resendFinal();
+  }
+
+  /** After a reconnect, say again that we are out (the message may have been lost with the connection). */
+  resendFinal() {
+    const f = this.myFin; if (!f || !this.net) return;
+    this.net.send({ t: 'event', kind: 'dead', rt: +f.t.toFixed(2), sc: f.score, d: f.dist, c: f.coins });
   }
 
   // ---------------------------------------------------------------- match
@@ -109,6 +152,7 @@ export class Coop {
   onEvent(m) {
     if (m.kind === 'dead') this.onOpponentDown(m);
     else if (m.kind === 'claim') this.onClaim(m);
+    else if (m.kind === 'kaiju' && this.opp) this.opp.spawnKaiju(+m.s, m.plan);
   }
 
   onOpponentDown(m) {
@@ -120,6 +164,9 @@ export class Coop {
     if (g.state === 'dying') return;                                    // both fell together: our own death resolves in stepDying
     this.ui.toast(`${this.oppName()} is OUT! Keep going to win`, 'mission', undefined, 3000); Audio.sfx.mission();
   }
+
+  /** Our Godzilla event started: tell the rival's phone so it shows up in their top half too. */
+  sendKaiju(s, plan) { this.net && this.net.send({ t: 'event', kind: 'kaiju', s: Math.round(s * 10) / 10, plan }); }
 
   /** The local player crashed: tell the opponent how long and how far we lasted. */
   onLocalDeath() {
@@ -164,12 +211,14 @@ export class Coop {
     const me = this.myFin || { t: g.runTime, score: Math.floor(g.score), dist: Math.floor(g.dist), coins: g.runCoins | 0 };
     const opp = P.fin || { t: P.gone ? 0 : g.runTime, score: P.score | 0, dist: Math.floor(P.dist), coins: P.stats.c | 0 };
     let winner;
-    if (P.gone) winner = 'me';
+    if (this.forfeit) winner = 'opp';
+    else if (P.gone) winner = 'me';
     else if (Math.abs(L.me - L.opp) > 0.05) winner = L.me > L.opp ? 'me' : 'opp';
     else winner = me.score >= opp.score ? (me.score === opp.score ? 'tie' : 'me') : 'opp';
     return {
       winner, me: { name: this.me().name, ...me }, opp: { name: this.oppName(), ...opp, gone: P.gone },
       missions: this.missions.map((m) => ({ text: m.text, owner: m.owner, done: m.done, progress: m.progress, goal: m.goal })), reward: this.reward,
+      forfeit: this.forfeit, canRematch: !!(this.net && this.net.open && !P.gone && !this.forfeit),
     };
   }
 

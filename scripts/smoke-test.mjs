@@ -44,7 +44,38 @@ console.log('Multiplayer room server (WebSocket protocol)');
   a.send(JSON.stringify({ t: 'state', s: 123.5, x: 2.4 })); await wait(120); check('state is relayed to the partner only', last(b2, 'state')?.s === 123.5 && !last(a, 'state'));
   b2.send(JSON.stringify({ t: 'event', kind: 'revive' })); await wait(120); check('events (revive etc.) are relayed', last(a, 'event')?.kind === 'revive');
   a.send('x'.repeat(5000)); await wait(250); check('an oversize message closes the sender', a.readyState !== 1);
-  await wait(200); check('the partner is told when someone drops', !!last(b2, 'peerLeft'));
+  await wait(200); check('the partner is told when someone drops mid-match (and the slot is held for a reconnect)', !!last(b2, 'peerAway') && !last(b2, 'peerLeft'));
+  const sidA = last(a, 'created')?.sid, a2 = await open();
+  a2.send(JSON.stringify({ t: 'rejoin', code, sid: 'bogus' })); await wait(150); check('rejoining with a wrong token is refused', !!last(a2, 'error')?.fatal);
+  a2.send(JSON.stringify({ t: 'rejoin', code, sid: sidA })); await wait(200);
+  check('the dropped player can rejoin the match and the partner is told', last(a2, 'rejoined')?.you === 0 && last(a2, 'rejoined')?.peer?.name === 'Bob' && !!last(b2, 'peerBack'));
+  a2.send(JSON.stringify({ t: 'state', s: 77 })); b2.send(JSON.stringify({ t: 'state', s: 88 })); await wait(150);
+  check('state flows both ways again after the rejoin', last(b2, 'state')?.s === 77 && last(a2, 'state')?.s === 88);
+  a2.send(JSON.stringify({ t: 'rematch' })); await wait(150); check('a rematch request is passed to the rival', !!last(b2, 'rematch') && !last(a2, 'go2'));
+  const goBefore = a2.inbox.filter((m) => m.t === 'go').length;
+  b2.send(JSON.stringify({ t: 'rematch' })); await wait(200);
+  const ga2 = last(a2, 'go'), gb2 = last(b2, 'go');
+  check('when both ask, a rematch starts with a new shared seed', a2.inbox.filter((m) => m.t === 'go').length === goBefore + 1 && ga2 && gb2 && ga2.seed === gb2.seed && ga2.seed !== ga.seed);
+  a2.send(JSON.stringify({ t: 'leave' })); await wait(150); check('leaving on purpose tells the partner immediately', !!last(b2, 'peerLeft'));
+  {                                                                                      // a drop that never comes back is a forfeit after the grace period
+    const x = await open(), y = await open(); x.send(JSON.stringify({ t: 'create', name: 'X' })); await wait(120); const cx = last(x, 'created').code;
+    y.send(JSON.stringify({ t: 'join', code: cx, name: 'Y' })); await wait(120); x.send(JSON.stringify({ t: 'start' })); await wait(120);
+    y.terminate(); await wait(300); const away = !!last(x, 'peerAway');
+    await wait(16000); check('a drop that never returns becomes a forfeit after ~15 s', away && !!last(x, 'peerLeft'));
+    try { x.close(); } catch { /* ignore */ }
+  }
+  {                                                                                      // daily challenge API
+    const id = '11111111-2222-4333-8444-555555555555', day = new Date().toISOString().slice(0, 10).replace(/-/g, ''), base = `http://localhost:${PORT}/api/daily`;
+    const post = (b) => fetch(base, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(b) });
+    let rr = await post({ id, name: '<i>Dana</i>', date: day, score: 5000, dist: 900 }); let jj = await rr.json();
+    check('a daily score is accepted and ranked', rr.ok && jj.rank === 1 && jj.best === 5000, JSON.stringify(jj));
+    await post({ id, name: 'Dana', date: day, score: 3000, dist: 500 }); rr = await post({ id: '22222222-2222-4333-8444-555555555555', name: 'Eli', date: day, score: 8000, dist: 1200 }); jj = await rr.json();
+    check('only your best daily score counts, and higher scores rank above', jj.rank === 1 && jj.players === 2, JSON.stringify(jj));
+    const gj = await (await fetch(`${base}?date=${day}&id=${id}`)).json();
+    check('the daily board lists the top runners with names sanitised and flags you', gj.top[0].name === 'Eli' && gj.top[1].name === 'iDana/i' && gj.top[1].me && gj.top[1].score === 5000 && gj.rank === 2, JSON.stringify(gj));
+    rr = await post({ id, name: 'x', date: '20200101', score: 1, dist: 1 }); check('scores for the wrong day are refused', rr.status === 400);
+    rr = await post({ id: 'nope', name: 'x', date: day, score: 1, dist: 1 }); check('a bad player id is refused', rr.status === 400);
+  }
   const d4 = await open(); d4.send('not json'); d4.send(JSON.stringify({ t: 'nonsense' })); await wait(120); check('junk input is ignored without dropping the connection', d4.readyState === 1);
   const bad = await new Promise((res) => { const w = new WebSocket(`ws://localhost:${PORT}/nope`); w.on('error', () => res(true)); w.on('open', () => res(false)); }); check('other upgrade paths are rejected', bad);
   for (const w of [a, b2, c3, d4]) try { w.close(); } catch { /* ignore */ }
@@ -261,22 +292,53 @@ try {
   r = await page.evaluate(() => { const g = window.__game, T = window.T; T.start(); g.boulderT = 1e9; g.grant('jetpack', 0, 1); const b = g.world.addBoulder(1, g.dist + 40, 14); g.boulder = b; T.until(() => b.s1 < g.dist - 2 || g.state === 'dying', 8); return { st: g.state }; });
   check('you fly safely over a boulder with the jetpack', r.st === 'running', JSON.stringify(r));
 
+  console.log('Daily challenge');
+  r = await page.evaluate(async () => {
+    const Cloud = await import('/js/cloud.js'), g = window.__game, sig = () => { let n = 0; while (g.state !== 'running' && n++ < 600) g.step(1 / 60); g.kaijuT = 1e9; g.boulderT = 1e9; g.player.invuln = 1e9; for (let i = 0; i < 300; i++) g.step(1 / 60); return g.world.solids.filter((x) => !x.isCornerWall).slice(0, 25).map((x) => `${x.type}${x.lane}@${x.s0.toFixed(1)}`).join('|'); };
+    g.state = 'menu'; g.ui.hide('pause'); g.playDaily(); const d1 = g.daily, a = sig(); g.state = 'menu'; g.playDaily(); const b = sig(); g.state = 'menu'; g.play(); const c = g.daily;
+    return { d1, same: a === b && a.length > 20, seedA: Cloud.dailySeed('20260101'), seedB: Cloud.dailySeed('20260101'), seedC: Cloud.dailySeed('20260102'), c };
+  });
+  check('the daily challenge is the same maze for everyone today (and normal play clears the daily flag)', r.d1 === new Date().toISOString().slice(0, 10).replace(/-/g, '') && r.same && r.c === null, JSON.stringify(r));
+  check('the daily seed comes from the date only', r.seedA === r.seedB && r.seedA !== r.seedC && r.seedA > 0);
+  await page.evaluate(() => { const g = window.__game; g.state = 'menu'; g.quitToMenu(); });
+  await page.click('#btnDaily'); await page.waitForSelector('#daily.show', { timeout: 30000 });
+  check('the daily panel opens from the menu with a play button', await page.isVisible('#dailyPlay') && (await page.textContent('#dailyInfo')).includes('same maze'));
+  await page.evaluate(() => { document.querySelector('#daily .back').click(); });
+
   console.log('Godzilla (blue flame)');
-  const KZ = "const g = window.__game, T = window.T; T.start(); g.boulderT = 1e9; g.kaijuT = 1e9; const FX = { kaiju() {}, flame() {}, rumble() {} };";
-  r = await page.evaluate(`(() => { ${KZ} g.kaiju.spawn(g.dist + 170, [[0, 2], [0, 2]], FX); g.player.invuln = 9999; const ph = new Set(); let n = 0, most = 0, armed = 0, vis = true; while (n++ < 60 * 6) { g.step(1 / 60); ph.add(g.kaiju.phase); const w = g.world.solids.filter((x) => x.type === 'flame'); most = Math.max(most, w.length); armed = Math.max(armed, w.filter((x) => x.armed).length); if (w.some((x) => x.armed && !x.group.visible)) vis = false; } return { ph: [...ph], fired: g.kaiju.fired, waves: most, armed, vis, model: !!g.kaiju.model.parent }; })()`);
+  const KZ = "const g = window.__game, T = window.T; T.start(); g.boulderT = 1e9; g.kaijuT = 1e9; const FX = { kaiju() {}, flame() {}, rumble() {} }, F = (...l) => ({ kind: 'fire', lanes: l }), Q = { kind: 'quake', lanes: [0, 1, 2] };";
+  r = await page.evaluate(`(() => { ${KZ} g.kaiju.spawn(g.dist + 170, [F(0, 2), F(0, 2)], FX); g.player.invuln = 9999; const ph = new Set(); let n = 0, most = 0, armed = 0, vis = true; while (n++ < 60 * 6) { g.step(1 / 60); ph.add(g.kaiju.phase); const w = g.world.solids.filter((x) => x.type === 'flame'); most = Math.max(most, w.length); armed = Math.max(armed, w.filter((x) => x.armed).length); if (w.some((x) => x.armed && !x.group.visible)) vis = false; } return { ph: [...ph], fired: g.kaiju.fired, waves: most, armed, vis, model: !!g.kaiju.model.parent }; })()`);
   check('Godzilla rises, charges, breathes two waves (each on two lanes) and the fire is visible', r.ph.includes('rise') && r.ph.includes('charge') && r.ph.includes('breathe') && r.fired === 2 && r.waves >= 4 && r.armed >= 2 && r.vis && r.model, JSON.stringify(r));
-  r = await page.evaluate(`(() => { ${KZ} g.kaiju.spawn(g.dist + 170, [[1, 2], [1, 2]], FX); g.player.invuln = 0; T.until(() => g.state === 'dying', 12); return { st: g.state, cause: g.cause }; })()`);
+  r = await page.evaluate(`(() => { ${KZ} g.kaiju.spawn(g.dist + 170, [F(1, 2), F(1, 2)], FX); g.player.invuln = 0; T.until(() => g.state === 'dying', 12); return { st: g.state, cause: g.cause }; })()`);
   check('standing in a burning lane is fatal ("burned")', r.st === 'dying' && r.cause === 'burned', JSON.stringify(r));
-  r = await page.evaluate(`(() => { ${KZ} g.kaiju.spawn(g.dist + 170, [[0, 2], [0, 2]], FX); g.player.invuln = 0; T.until(() => g.kaiju.fired >= 2 && !g.kaiju.waves.some((x) => x.armed && x.s1 > g.dist - 1) || g.state === 'dying', 14); T.run(0.6); return { st: g.state, kz: g.stats.kaiju | 0 }; })()`);
+  r = await page.evaluate(`(() => { ${KZ} g.kaiju.spawn(g.dist + 170, [F(0, 2), F(0, 2)], FX); g.player.invuln = 0; T.until(() => g.kaiju.fired >= 2 && !g.kaiju.waves.some((x) => x.armed && x.s1 > g.dist - 1) || g.state === 'dying', 14); T.run(0.6); return { st: g.state, kz: g.stats.kaiju | 0 }; })()`);
   check('the free lane is safe, and dodging both waves scores', r.st === 'running' && r.kz === 1, JSON.stringify(r));
   r = await page.evaluate(`(() => { ${KZ} const w = g.world, sd = w.addFlame(0, g.dist + 20, 5); sd.armed = true; sd.ghost = false; const low = w.probe(sd.s0 + 1, -2.4, 0, 1.75).hits.some((h) => h.sd === sd), high = w.probe(sd.s0 + 1, -2.4, 1.6, 1.75).hits.some((h) => h.sd === sd), other = w.probe(sd.s0 + 1, 0, 0, 1.75).hits.some((h) => h.sd === sd); return { low, high, other }; })()`);
   check('flames are low: they burn on the ground, a jump (or flight) clears them, other lanes are unaffected', r.low && !r.high && !r.other, JSON.stringify(r));
-  r = await page.evaluate(`(() => { ${KZ} g.grant('shield', 0, 1); g.kaiju.spawn(g.dist + 170, [[1, 2], [1, 2]], FX); g.player.invuln = 0; T.until(() => g.state === 'dying' || (g.kaiju.fired >= 1 && !g.shield), 10); return { st: g.state, shield: g.shield }; })()`);
+  r = await page.evaluate(`(() => { ${KZ} g.grant('shield', 0, 1); g.kaiju.spawn(g.dist + 170, [F(1, 2), F(1, 2)], FX); g.player.invuln = 0; T.until(() => g.state === 'dying' || (g.kaiju.fired >= 1 && !g.shield), 10); return { st: g.state, shield: g.shield }; })()`);
   check('the Spirit Shield absorbs a flame wave', r.st === 'running' && !r.shield, JSON.stringify(r));
-  r = await page.evaluate(`(() => { ${KZ} g.grant('jetpack', 0, 1); g.kaiju.spawn(g.dist + 170, [[0, 1, 2], [0, 1, 2]], FX); T.until(() => g.kaiju.fired >= 2 && g.kaiju.t > 6.5 || g.state === 'dying', 12); return { st: g.state }; })()`);
+  r = await page.evaluate(`(() => { ${KZ} g.grant('jetpack', 0, 1); g.kaiju.spawn(g.dist + 170, [F(0, 1, 2), F(0, 1, 2)], FX); T.until(() => g.kaiju.fired >= 2 && g.kaiju.t > 6.5 || g.state === 'dying', 12); return { st: g.state }; })()`);
   check('flying over the flames with the jetpack is safe', r.st === 'running', JSON.stringify(r));
-  r = await page.evaluate(`(() => { ${KZ} g.score = 24990; g.player.invuln = 9999; T.run(2); const car = g.world.pickups.find((q) => q.type === 'car'); if (car) g.grant('car', 0, 1); g.kaiju.spawn(g.dist + 170, [[0, 1, 2], [0, 1, 2]], FX); g.player.invuln = 0; T.until(() => g.kaiju.fired >= 2 && g.kaiju.t > 6 || g.state === 'dying', 12); return { st: g.state, car: !!g.player.car }; })()`);
+  r = await page.evaluate(`(() => { ${KZ} g.score = 24990; g.player.invuln = 9999; T.run(2); const car = g.world.pickups.find((q) => q.type === 'car'); if (car) g.grant('car', 0, 1); g.kaiju.spawn(g.dist + 170, [F(0, 1, 2), F(0, 1, 2)], FX); g.player.invuln = 0; T.until(() => g.kaiju.fired >= 2 && g.kaiju.t > 6 || g.state === 'dying', 12); return { st: g.state, car: !!g.player.car }; })()`);
   check('the car is fireproof', r.st === 'running' && r.car, JSON.stringify(r));
+  r = await page.evaluate(`(() => { ${KZ} g.kaiju.spawn(g.dist + 170, [Q], FX); g.player.invuln = 0; T.until(() => g.state === 'dying', 12); return { st: g.state, cause: g.cause }; })()`);
+  check('Godzilla\'s tail shockwave (all three lanes) is fatal if you stay on the ground', r.st === 'dying' && r.cause === 'quake', JSON.stringify(r));
+  r = await page.evaluate(`(() => { ${KZ} g.kaiju.spawn(g.dist + 170, [Q], FX); g.player.invuln = 0; let jumped = false; T.until(() => g.state === 'dying' || (g.kaiju.fired >= 1 && !g.world.solids.some((x) => x.type === 'flame' && x.armed && x.s1 > g.dist - 1)), 14, () => { const w = g.world.solids.find((x) => x.type === 'flame' && x.armed); if (w && !jumped && w.s0 - g.dist < 14 && w.s0 - g.dist > 0) { g.action('jump'); jumped = true; } }); T.run(0.5); return { st: g.state, jumped }; })()`);
+  check('...but you can jump over the shockwave', r.st === 'running' && r.jumped, JSON.stringify(r));
+  r = await page.evaluate(`(() => { ${KZ} const w = g.world, sd = w.addFlame(1, g.dist + 20, 3, 'quake'); sd.armed = true; sd.ghost = false; const hit = (x, y) => w.probe(sd.s0 + 1, x, y, 1.75).hits.some((h) => h.sd === sd); return { l: hit(-2.4, 0), m: hit(0, 0), r: hit(2.4, 0), air: hit(0, 1.5) }; })()`);
+  check('the shockwave spans every lane but is low enough to jump', r.l && r.m && r.r && !r.air, JSON.stringify(r));
+  r = await page.evaluate(async () => {
+    const { makePlan, encodePlan, decodePlan } = await import('/js/kaiju.js'); let bad = 0, kinds = new Set(), n = 0;
+    for (let i = 0; i < 600; i++) {
+      const cur = i % 3, diff = (i % 10) / 10, plan = makePlan(Math.random, cur, diff); n++;
+      for (const w of plan) kinds.add(w.kind);
+      if (plan[0].kind === 'fire' && plan[0].lanes.includes(cur) === false) bad++;                         // the first fire wave burns your lane
+      let lane = cur; for (const w of plan) { if (w.kind !== 'fire') continue; const free = [0, 1, 2].find((l) => !w.lanes.includes(l)); if (Math.abs(free - lane) > 1 || w.lanes.length !== 2) bad++; lane = free; }
+      if (JSON.stringify(decodePlan(encodePlan(plan))) !== JSON.stringify(plan)) bad++;
+    }
+    return { bad, kinds: [...kinds], junk: decodePlan(['x']) === null && decodePlan('f') === null && decodePlan(['f9']) === null && decodePlan([]) === null && decodePlan(['q', 'q', 'q', 'q', 'q']) === null };
+  });
+  check('attack patterns are always dodgeable (a free lane within one step), mix fire and shockwaves, and survive the network encoding', r.bad === 0 && r.kinds.length === 2 && r.junk, JSON.stringify(r));
   r = await page.evaluate(`(() => { const g = window.__game, T = window.T; T.start(); g.boulderT = 1e9; g.kaijuT = 0; g.player.invuln = 9999; g.autoTurn = true; let on = false, at = 0, n = 0; while (n++ < 60 * 150 && g.state === 'running') { g.step(1 / 60); for (const o of g.world.solids) if (!o.isCornerWall && o.type !== 'flame') o.ghost = true; if (g.kaiju.live) { on = true; at = g.dist; break; } } const gap = g.kaiju.live ? g.kaiju.s - g.dist : 0; g.kaiju.dispose(); return { on, at: Math.round(at), gap: Math.round(gap) }; })()`);
   check('Godzilla turns up on its own (after 400 m, on a long straight) well ahead of you', r.on && r.at > 400 && r.gap > 100, JSON.stringify(r));
   r = await page.evaluate(() => {
@@ -568,6 +630,16 @@ try {
       if (PNG) { const im = PNG.sync.read(png); const lum = (y) => { let v = 0, n = 0; for (let x = 0; x < im.width; x += 4) { const k = (y * im.width + x) * 4; v += im.data[k] + im.data[k + 1] + im.data[k + 2]; n++; } return v / n; }; ok = lum(Math.floor(im.height * 0.25)) > 20 && lum(Math.floor(im.height * 0.75)) > 20; }
       check('both halves actually render (the top and the bottom half are not blank)', ok);
     }
+    await A.evaluate(async () => { const { encodePlan } = await import('/js/kaiju.js'); const g = window.__game; g.player.invuln = 1e9; g.kaijuT = 1e9; const plan = [{ kind: 'fire', lanes: [0, 2] }, { kind: 'quake', lanes: [0, 1, 2] }]; g.kaiju.spawn(g.dist + 170, plan, { kaiju() {}, flame() {}, rumble() {} }); g.coop.sendKaiju(g.dist + 170, encodePlan(plan)); });
+    await B.waitForFunction(() => window.__game.coop.opp && window.__game.coop.opp.kaiju && window.__game.coop.opp.kaiju.live, null, { timeout: 30000 }).catch(() => {});
+    check('the rival\'s Godzilla attack is replayed in their half of the split screen', await B.evaluate(() => { const k = window.__game.coop.opp.kaiju; return !!(k && k.live && k.plan.length === 2 && k.plan[1].kind === 'quake'); }));
+    await A.evaluate(() => { window.__game.kaiju.dispose(); window.__game.player.invuln = 0; });
+    await A.evaluate(() => window.__game.coop.net.ws.close());
+    await B.waitForFunction(() => window.__game.coop.partner.away, null, { timeout: 20000 });
+    check('when a phone drops mid-match the rival sees "reconnecting" instead of a forfeit', await B.evaluate(() => window.__game.coop.partner.away && !window.__game.coop.partner.gone));
+    await A.waitForFunction(() => window.__game.coop.net && window.__game.coop.net.open && !window.__game.coop.reconnecting, null, { timeout: 30000 });
+    await B.waitForFunction(() => !window.__game.coop.partner.away, null, { timeout: 20000 });
+    check('the dropped phone reconnects by itself and the match carries on', await A.evaluate(() => window.__game.coop.active && !window.__game.coop.forfeit) && await B.evaluate(() => !window.__game.coop.partner.gone));
     await A.evaluate(() => { const g = window.__game; g.boulderT = 1e9; g.player.invuln = 0; g.die('crash'); });
     await B.waitForFunction(() => !window.__game.coop.partner.alive, null, { timeout: 30000 });
     await A.evaluate(() => { const g = window.__game; for (let i = 0; i < 200; i++) g.step(1 / 60); });
@@ -585,6 +657,15 @@ try {
     const ttl = await Promise.all([A, B].map((pg) => pg.evaluate(() => document.getElementById('coTitle').textContent.toLowerCase())));
     check('whoever lasted longer wins: the survivor (Bo) sees "You win", Ada sees Bo win', ttl[1].includes('you win') && ttl[0].includes('bo wins'), JSON.stringify(ttl));
     check('the split screen is switched off when the match ends', await A.evaluate(() => !window.__game.split && !document.body.classList.contains('split')));
+    check('the results screen offers a rematch', await A.isVisible('#coRematch') && await B.isVisible('#coRematch'));
+    await A.click('#coRematch'); await B.waitForFunction(() => document.getElementById('coRematch').textContent.includes('accept'), null, { timeout: 20000 });
+    check('the rival sees that a rematch was requested', (await A.textContent('#coRematch')).includes('Waiting'));
+    await B.click('#coRematch');
+    await Promise.all([A, B].map((pg) => pg.waitForFunction(() => window.__game.coop.active && window.__game.state === 'running', null, { timeout: 240000 })));
+    check('both asking for a rematch starts a fresh match on both phones (still split screen)', await A.evaluate(() => window.__game.split && window.__game.coop.opp) && await B.evaluate(() => window.__game.split));
+    await Promise.all([A, B].map((pg) => pg.evaluate(() => { const g = window.__game; g.boulderT = 1e9; g.player.invuln = 0; g.die('crash'); })));
+    await Promise.all([A, B].map((pg) => pg.evaluate(() => { const g = window.__game; for (let i = 0; i < 400; i++) g.step(1 / 60); })));
+    await Promise.all([A, B].map((pg) => pg.waitForSelector('#coopOver.show', { timeout: 40000 })));
     await A.click('#coAgain'); await A.waitForSelector('#lobby.show');
     check('"back to lobby" keeps the room open for a rematch', (await A.textContent('#lobbyBigCode')) === code);
     await A.context().close(); await B.context().close();
