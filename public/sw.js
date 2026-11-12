@@ -2,11 +2,11 @@
 //  * App code (HTML / JS / CSS / manifest): NETWORK FIRST, so the page and its scripts are always the same version.
 //    If the network is slow (>4 s) or offline, the last cached copy is used.
 //  * Vendor libraries and icons: stale-while-revalidate (they only change with a new deploy).
-const CACHE = 'labyrinth-run-v6';
+const CACHE = 'labyrinth-run-v7';
 const SHELL = [
   '/', '/index.html', '/css/style.css', '/manifest.webmanifest',
   '/js/main.js', '/js/game.js', '/js/world.js', '/js/track.js', '/js/player.js', '/js/chaser.js', '/js/models.js', '/js/textures.js',
-  '/js/fx.js', '/js/post.js', '/js/split.js', '/js/audio.js', '/js/input.js', '/js/ui.js', '/js/missions.js', '/js/storage.js', '/js/config.js', '/js/cloud.js', '/js/net.js', '/js/ghost.js', '/js/coop.js',
+  '/js/fx.js', '/js/post.js', '/js/split.js', '/js/kaiju.js', '/js/audio.js', '/js/input.js', '/js/ui.js', '/js/missions.js', '/js/storage.js', '/js/config.js', '/js/cloud.js', '/js/net.js', '/js/ghost.js', '/js/coop.js',
   '/vendor/three/three.module.js', '/vendor/three/three.core.js',
   '/vendor/three/addons/postprocessing/EffectComposer.js', '/vendor/three/addons/postprocessing/RenderPass.js',
   '/vendor/three/addons/postprocessing/UnrealBloomPass.js', '/vendor/three/addons/postprocessing/OutputPass.js',
