@@ -145,3 +145,27 @@ export function buildSky(topColor, bottomColor) {
   m.renderOrder = -10; m.frustumCulled = false;
   return m;
 }
+
+/** Hemisphere + sun (with shadows) + fill light, used by every view's scene. */
+export function makeLights(scene) {
+  const hemi = new THREE.HemisphereLight(0xe6f4ff, 0xb8c79a, 1.0); scene.add(hemi);
+  const sun = new THREE.DirectionalLight(0xbfe6ff, 1.5); sun.position.set(-9, 20, 8); sun.target.position.set(0, 0, -14);
+  sun.castShadow = true;
+  const sc = sun.shadow.camera; sc.left = -13; sc.right = 13; sc.top = 40; sc.bottom = -26; sc.near = 1; sc.far = 70;
+  sun.shadow.bias = -0.0006; sun.shadow.normalBias = 0.04; sun.shadow.radius = 3; sun.shadow.blurSamples = 10;
+  scene.add(sun, sun.target);
+  const fill = new THREE.DirectionalLight(0xffe6c8, 0.3); fill.position.set(6, 5, 12); scene.add(fill);
+  return { hemi, sun, fill };
+}
+
+/** Two rings of distant hills that follow the camera (depth at the horizon). */
+export function makeHills(scene) {
+  const hills = [];
+  for (const [rad, h, col] of [[330, 55, 0.5], [300, 38, 0.3]]) {
+    const geo = new THREE.CylinderGeometry(rad, rad, h, 72, 1, true), pos = geo.attributes.position;
+    for (let i = 0; i < pos.count; i++) if (pos.getY(i) > 0) { const a = Math.atan2(pos.getZ(i), pos.getX(i)); pos.setY(i, h / 2 * (0.25 + 0.75 * Math.abs(Math.sin(a * 3.1 + rad) * 0.6 + Math.sin(a * 7.3) * 0.4))); }
+    const hill = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: 0x9db8c8, fog: false, side: THREE.BackSide, depthWrite: true }));
+    hill.position.y = h / 2 - 6; hill.renderOrder = -5; hill.userData.mix = col; scene.add(hill); hills.push(hill);
+  }
+  return hills;
+}

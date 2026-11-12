@@ -34,8 +34,8 @@ model and sound is generated procedurally.
 * **Missions** – three at a time. Finish all three to raise your **permanent score multiplier** (up to ×10) and earn coin rewards.
 * **Revive** after a crash by paying coins (price doubles each time, up to 3 revives per run).
 * **Shop** – 6 outfits and 4 power-up upgrade tracks (5 levels each).
-* **Play together (2 players, 2 phones).** From the menu choose **Play Together**: one player creates a room and gets a 4-letter code, the other joins with it, the host starts. Each phone controls its own runner on the **same maze** (generated from a shared seed). You see your buddy as a see-through, named runner. If one of you goes down, the other can bring them back by grabbing a ❤ that appears ahead (free). Three **team missions** are picked for every match (e.g. "collect 320 coins together", "dodge 3 boulders together", "revive your buddy"); finishing them pays coins to both players. The match ends when both are down; then you can rematch from the lobby.
-* **Bonus car at 25,000 points** (team score in co-op). A car appears ahead; drive into it for **2 minutes** behind the wheel: steer freely (hold ← → or drag; taps nudge), **↑ nitro**, smash through every gate, beam, slab and boulder for bonus points, and the corners turn themselves. When the fuel runs out you get a coin bonus and a short shield; another car is offered 60,000 points later.
+* **Versus (2 players, 2 phones, split screen).** From the menu choose **Versus**: one player creates a room and gets a 4-letter code, the other joins, the host starts. Both phones run the **same maze** (shared seed) with a **horizontal split screen**: the opponent's live run on the top half, yours on the bottom. Each player runs on their own. **If one crashes they are out but the other keeps going**; the match ends when both are down and **whoever lasted longer wins** (ties go to score). Three **"first to…" missions** are picked per match (coins, distance, jumps, power-ups…); the first player to reach each goal claims it and its coin reward. The bonus car still triggers at 25,000 points on your own score.
+* **Bonus car at 25,000 points**. A car appears ahead; drive into it for **2 minutes** behind the wheel: steer freely (hold ← → or drag; taps nudge), **↑ nitro**, smash through every gate, beam, slab and boulder for bonus points, and the corners turn themselves. When the fuel runs out you get a coin bonus and a short shield; another car is offered 60,000 points later.
 * **The Hollow Realm**: an original, eerie 80s-horror-flavoured world (dark red sky and lightning, veined walls with glowing cracks, ash floors, flickering strings of bulbs, drifting spores). It appears in the normal biome rotation, and the whole world slides into it during the car ride, together with a retro synth-wave score.
 * **Nine biomes** that blend into each other every 1.5 km: *Sunlit Garden Maze → Cherry Blossom Gardens → Golden Ruins → Autumn Orchard → Hollow Realm → Frozen Crystal Gardens → Overgrown Temple → Ember Canyon → Sunken Coral Palace*,
   each with its own procedural materials, lighting, fog, sky, decor, scattered props (flowers, pebbles, mushrooms, shells) and weather (falling blossom, leaves, snow, fireflies, embers, bubbles). Side openings and arches make the corridor feel like a maze.
@@ -101,7 +101,7 @@ public/
   js/
     main.js            boot + wiring
     game.js            state machine, physics integration, collisions, power-ups, camera, atmosphere, adaptive quality
-    net.js ghost.js coop.js  two-player: WebSocket client, buddy ghost, session/lobby/missions
+    net.js coop.js split.js ghost.js post.js  versus: WebSocket client, lobby/match/missions, the opponent's split-screen half, shared post-processing chain
     track.js           the path: straight legs joined by 90° corners (turns, zig-zags, camera swing)
     world.js           segment generator, maze decor, obstacle/coin/pick-up spawner with the fairness invariant
     player.js          runner controller + procedural animation
@@ -125,7 +125,7 @@ live in [`public/js/config.js`](public/js/config.js).
 
 `scripts/smoke-test.mjs` drives the real game in headless Chromium: it verifies each rule (ramps, slabs, stumble/caught logic,
 shield, wings, boots, magnet, coins, scoring, revive, saving), the shop/missions/settings UI, keyboard and swipe input, that the
-canvas actually renders, drives the room server with raw WebSocket clients, plays a **two-player match across two real browser sessions** (identical mazes, ghosts, revive, shared missions), tests the bonus car, and fuzzes ~10 simulated minutes of bot play across all nine biomes.
+canvas actually renders, drives the room server with raw WebSocket clients, plays a **two-player match across two real browser sessions** (split screen, identical mazes, survivor keeps playing, winner, first-to missions), tests the bonus car, and fuzzes ~10 simulated minutes of bot play across all nine biomes.
 
 ```bash
 npm install                                              # installs ws

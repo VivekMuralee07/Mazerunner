@@ -41,8 +41,8 @@
     <button id="btnPause" class="iconbtn" aria-label="Pause">❚❚</button>
   </div>
   <div id="powerups"></div>
-  <div id="coopHud" class="hidden"><div id="coopCard"></div><div id="coopMissions"></div></div>
-  <div id="downBanner" class="hidden"><b>You're down!</b><span>Your buddy can bring you back: they need to grab the ❤ pickup.</span></div>
+  <div id="coopHud" class="hidden"><div id="vsBar"><span id="vsOpp"></span><b id="vsMid"></b><span id="vsMe"></span></div><div id="coopMissions"></div></div>
+  <div id="downBanner" class="hidden"><b>You're out!</b><span></span></div>
   <div id="biomeBanner"></div>
   <div id="nitro" class="chip hidden">⚡ NITRO</div>
   <div id="countdown"></div>
@@ -65,7 +65,7 @@
   <div class="logo"><span>LABYRINTH</span><b>RUN</b><em>Outrun the Minotaur</em></div>
   <div class="menu-bottom">
     <button id="btnPlay" class="btn primary huge">PLAY</button>
-    <button id="btnTogether" class="btn gold big">👥 Play Together</button>
+    <button id="btnTogether" class="btn gold big">⚔ Versus (2 players)</button>
     <div class="btnrow">
       <button id="btnShop" class="btn">Outfits &amp; Upgrades</button>
       <button id="btnMissions" class="btn">Missions</button>
@@ -109,8 +109,8 @@
 
 <section id="lobby" class="screen panel-screen">
   <div class="panel narrow center">
-    <h2>Play together</h2>
-    <p class="sub">Two players, two phones, one maze. Each phone controls its own runner.</p>
+    <h2>Versus</h2>
+    <p class="sub">Two phones, one maze, split screen. Last runner standing wins.</p>
     <div id="lobbyIdle">
       <button id="lobbyCreate" class="btn primary">Create a room</button>
       <div class="or">or join a friend</div>
@@ -120,7 +120,7 @@
       <div class="bigcode" id="lobbyBigCode">----</div>
       <p class="sub" id="lobbyStatus">Share this code with your friend.</p>
       <div id="lobbyPlayers" class="players"></div>
-      <button id="lobbyStart" class="btn primary hidden">Start match</button>
+      <button id="lobbyStart" class="btn primary hidden">Start race</button>
     </div>
     <p id="lobbyError" class="err"></p>
     <button id="lobbyBack" class="btn">Back</button>
@@ -129,11 +129,11 @@
 
 <section id="coopOver" class="screen panel-screen">
   <div class="panel center">
-    <h2>Team results</h2>
-    <div id="coTeam" class="teamscore">0</div>
+    <h2 id="coTitle">Results</h2>
+    <p id="coWhy" class="sub"></p>
     <div id="coBest" class="newbest hidden">★ NEW PERSONAL BEST ★</div>
     <div id="coPlayers" class="stats"></div>
-    <h3 class="subhead">Team missions</h3>
+    <h3 class="subhead">Missions</h3>
     <div id="coMissions"></div>
     <div class="btnrow vertical"><button id="coAgain" class="btn primary">Back to lobby</button><button id="coMenu" class="btn">Main menu</button></div>
   </div>
