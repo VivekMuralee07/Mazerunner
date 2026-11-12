@@ -726,7 +726,8 @@ export class Game {
     if (Math.abs(R - (this.tintApplied ?? -1)) > 0.01) {
       this.tintApplied = R; const tint = new THREE.Color(0x8a6aa6);
       this.tintMats = this.tintMats || Object.values(this.world.BM).flatMap((m) => [m.wall, m.floor, m.trim]);
-      for (const m of this.tintMats) m.color.setRGB(1, 1, 1).lerp(tint, R * 0.5);
+      const mul = new THREE.Color(1, 1, 1).lerp(tint, R * 0.5);
+      for (const m of this.tintMats) { if (!m.userData.baseColor) m.userData.baseColor = m.color.clone(); m.color.copy(m.userData.baseColor).multiply(mul); }
     }
     const idx = t > 0.5 ? (bi + 1) % BIOMES.length : bi % BIOMES.length;
     if (idx !== this.biomeIdx) { this.biomeIdx = idx; this.ui.onBiome(BIOMES[idx], this.state === STATE.RUNNING && this.dist > 50); }

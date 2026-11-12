@@ -5,7 +5,7 @@ stone gates, slide under spike beams, leap onto slabs and outrun the Minotaur �
 Three.js (PBR materials, dynamic shadows, bloom, fog, particles) and **no asset downloads**: every texture,
 model and sound is generated procedurally.
 
-> Single-page game · zero runtime dependencies on the server · ready for a Render **Web Service (Starter plan)**.
+> Single-page game · one tiny server dependency (`ws`, for two-player rooms) · ready for a Render **Web Service (Starter plan)**.
 
 ## Play
 
@@ -34,7 +34,10 @@ model and sound is generated procedurally.
 * **Missions** – three at a time. Finish all three to raise your **permanent score multiplier** (up to ×10) and earn coin rewards.
 * **Revive** after a crash by paying coins (price doubles each time, up to 3 revives per run).
 * **Shop** – 6 outfits and 4 power-up upgrade tracks (5 levels each).
-* **Eight biomes** that blend into each other every 1.5 km: *Sunlit Garden Maze → Cherry Blossom Gardens → Golden Ruins → Autumn Orchard → Frozen Crystal Gardens → Overgrown Temple → Ember Canyon → Sunken Coral Palace*,
+* **Play together (2 players, 2 phones).** From the menu choose **Play Together**: one player creates a room and gets a 4-letter code, the other joins with it, the host starts. Each phone controls its own runner on the **same maze** (generated from a shared seed). You see your buddy as a see-through, named runner. If one of you goes down, the other can bring them back by grabbing a ❤ that appears ahead (free). Three **team missions** are picked for every match (e.g. "collect 320 coins together", "dodge 3 boulders together", "revive your buddy"); finishing them pays coins to both players. The match ends when both are down; then you can rematch from the lobby.
+* **Bonus car at 25,000 points** (team score in co-op). A car appears ahead; drive into it for **2 minutes** behind the wheel: steer freely (hold ← → or drag; taps nudge), **↑ nitro**, smash through every gate, beam, slab and boulder for bonus points, and the corners turn themselves. When the fuel runs out you get a coin bonus and a short shield; another car is offered 60,000 points later.
+* **The Hollow Realm**: an original, eerie 80s-horror-flavoured world (dark red sky and lightning, veined walls with glowing cracks, ash floors, flickering strings of bulbs, drifting spores). It appears in the normal biome rotation, and the whole world slides into it during the car ride, together with a retro synth-wave score.
+* **Nine biomes** that blend into each other every 1.5 km: *Sunlit Garden Maze → Cherry Blossom Gardens → Golden Ruins → Autumn Orchard → Hollow Realm → Frozen Crystal Gardens → Overgrown Temple → Ember Canyon → Sunken Coral Palace*,
   each with its own procedural materials, lighting, fog, sky, decor, scattered props (flowers, pebbles, mushrooms, shells) and weather (falling blossom, leaves, snow, fireflies, embers, bubbles). Side openings and arches make the corridor feel like a maze.
 * **Colour-coded obstacles** stand out from the muted maze: orange/black hazard barriers (jump), red/white spike beams (roll), crimson sealed gates (dodge), teal chevron slabs (ride).
 * **Persistent stats.** Progress (coins, best score, lifetime stats, outfits, upgrades, missions, settings) is saved on the device (`localStorage` + an IndexedDB mirror, with a persistent-storage request) **and** on the server, keyed by an anonymous player id. Players are asked for a name on first launch and appear on a shared **global leaderboard** (top 50, with their own rank), and can change it in Settings; and use their **recovery code** (Settings) to restore progress after switching phones or clearing data.
@@ -48,7 +51,7 @@ a way through, so you can never be handed an unavoidable crash.
 npm start            # http://localhost:3000   (PORT env var is honoured)
 ```
 
-No build step, no `npm install` needed (there are no dependencies). Three.js r187 is vendored in `public/vendor/three` (MIT).
+`npm install` once (it fetches `ws`, the WebSocket library used for two-player rooms), then `npm start`. There is no build step. Three.js r187 is vendored in `public/vendor/three` (MIT).
 
 ## Deploy on Render (Starter plan)
 
@@ -62,7 +65,7 @@ No build step, no `npm install` needed (there are no dependencies). Three.js r18
 | Setting | Value |
 | --- | --- |
 | Runtime | Node |
-| Build command | `npm install` (or leave empty) |
+| Build command | `npm install` (**required** now: it installs `ws` for two-player mode) |
 | Start command | `npm start` |
 | Health check path | `/healthz` |
 | Instance type | Starter |
@@ -98,6 +101,7 @@ public/
   js/
     main.js            boot + wiring
     game.js            state machine, physics integration, collisions, power-ups, camera, atmosphere, adaptive quality
+    net.js ghost.js coop.js  two-player: WebSocket client, buddy ghost, session/lobby/missions
     track.js           the path: straight legs joined by 90° corners (turns, zig-zags, camera swing)
     world.js           segment generator, maze decor, obstacle/coin/pick-up spawner with the fairness invariant
     player.js          runner controller + procedural animation
@@ -121,10 +125,11 @@ live in [`public/js/config.js`](public/js/config.js).
 
 `scripts/smoke-test.mjs` drives the real game in headless Chromium: it verifies each rule (ramps, slabs, stumble/caught logic,
 shield, wings, boots, magnet, coins, scoring, revive, saving), the shop/missions/settings UI, keyboard and swipe input, that the
-canvas actually renders, and fuzzes ~10 simulated minutes of bot play across all eight biomes.
+canvas actually renders, drives the room server with raw WebSocket clients, plays a **two-player match across two real browser sessions** (identical mazes, ghosts, revive, shared missions), tests the bonus car, and fuzzes ~10 simulated minutes of bot play across all nine biomes.
 
 ```bash
-npm i -g playwright && npx playwright install chromium   # one-off, not a runtime dependency
+npm install                                              # installs ws
+npm i -g playwright && npx playwright install chromium   # one-off, only for the browser tests
 npm test                                                 # add -- --shots to write screenshots to ./screenshots
 ```
 

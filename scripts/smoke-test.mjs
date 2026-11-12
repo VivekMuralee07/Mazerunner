@@ -514,12 +514,15 @@ try {
   check('all nine biomes were visited', r.biomes.length === 9, `visited ${r.biomes.length}`);
   check('speed ramps up to the cap', r.speed >= 35);
   console.log('Two-player co-op (two real browser sessions)');
+  await ctx.close();                                  // free the CPU: software-rendered WebGL pages are heavy
   {
     const mkp = async (name) => {
       const cx = await browser.newContext({ viewport: { width: 640, height: 360 } });
       await cx.addInitScript((n) => localStorage.setItem('labyrinth-run-save-v1', JSON.stringify({ settings: { namePrompted: true, tutorialDone: true, quality: 'low', name: n } })), name);
+      cx.setDefaultTimeout(180000);
       const pg = await cx.newPage(); pg.on('pageerror', (e) => problems.push(`pageerror(${name}): ${e.message}`));
-      await pg.goto(url); await pg.waitForFunction(() => window.__game && window.__game.state === 'menu', null, { timeout: 150000 }); return pg;
+      await pg.goto(url); await pg.waitForFunction(() => window.__game && window.__game.state === 'menu', null, { timeout: 180000 });
+      await pg.waitForSelector('#loading', { state: 'hidden', timeout: 180000 }); return pg;
     };
     const A = await mkp('Ada'), B = await mkp('Bo');
     await A.click('#btnTogether'); await A.waitForSelector('#lobby.show'); await A.click('#lobbyCreate');
