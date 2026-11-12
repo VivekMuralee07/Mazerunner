@@ -330,7 +330,8 @@ export function coinTexture() {
 /** Builds and returns {biomeId: {wall, floor, trim}} materials and the shared utility textures. */
 export function buildBiomeMaterials(biomes, maxAniso = 4, onProgress) {
   const out = {};
-  const mk = (spec, color, emissiveColor, emissiveIntensity = 1.4) => {
+  const GLOSS = { hedge: 0.12, blossom: 0.25, stone: 0.2, autumn: 0.12, crystal: 0.7, jungle: 0.4, lava: 0.45, coral: 0.7 };
+  const mk = (spec, color, emissiveColor, emissiveIntensity = 1.4, gloss = 0) => {
     const tex = (cv, srgb) => {
       if (!cv) return null;
       const t = new THREE.CanvasTexture(cv);
@@ -338,11 +339,13 @@ export function buildBiomeMaterials(biomes, maxAniso = 4, onProgress) {
       if (srgb) t.colorSpace = THREE.SRGBColorSpace;
       return t;
     };
-    return new THREE.MeshStandardMaterial({
+    const props = {
       map: tex(spec.map, true), bumpMap: tex(spec.bump, false), bumpScale: spec.bumpScale,
       roughness: spec.rough, metalness: 0.05, color,
       emissive: spec.emissive ? emissiveColor : 0x000000, emissiveMap: tex(spec.emissive, true), emissiveIntensity,
-    });
+    };
+    // floors get a clear-coat so they pick up soft reflections of the sky, like polished / wet stone
+    return gloss ? new THREE.MeshPhysicalMaterial({ ...props, clearcoat: gloss, clearcoatRoughness: 0.32 }) : new THREE.MeshStandardMaterial(props);
   };
   const cacheW = {}, cacheF = {};
   let i = 0;
@@ -352,7 +355,7 @@ export function buildBiomeMaterials(biomes, maxAniso = 4, onProgress) {
     const accent = new THREE.Color(b.accent);
     out[b.id] = {
       wall: mk(cacheW[b.wall], 0xffffff, accent, b.wall === 'crystal' ? 0.7 : 0.9),
-      floor: mk(cacheF[b.floor], 0xffffff, accent, 0.7),
+      floor: mk(cacheF[b.floor], 0xffffff, accent, 0.7, GLOSS[b.id] || 0.2),
       trim: new THREE.MeshStandardMaterial({ map: null, color: b.trim, roughness: 0.85, metalness: 0.1 }),
     };
     onProgress && onProgress(++i / biomes.length);

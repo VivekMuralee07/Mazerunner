@@ -233,7 +233,6 @@ export class UI {
     if (!dir || dist > 120) { if (this.turnShown) { el.classList.add('hidden'); this.turnShown = false; } return; }
     if (!this.turnShown) { el.classList.remove('hidden'); this.turnShown = true; }
     el.dataset.dir = dir > 0 ? 'left' : 'right'; el.classList.toggle('near', dist < 40); el.classList.toggle('ok', !!accepted);
-    $('#turnDist').textContent = `${Math.max(0, Math.round(dist))} m`;
   }
 
   flash(color) { const f = $('#flash'); f.style.transition = 'none'; f.style.background = color; f.style.opacity = 1; void f.offsetWidth; f.style.transition = 'opacity .45s ease-out'; f.style.opacity = 0; }

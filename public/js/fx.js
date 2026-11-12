@@ -122,10 +122,10 @@ export class Ambient {
 export function buildSky(topColor, bottomColor) {
   const mat = new THREE.ShaderMaterial({
     side: THREE.BackSide, depthWrite: false, fog: false,
-    uniforms: { top: { value: new THREE.Color(topColor) }, bottom: { value: new THREE.Color(bottomColor) }, time: { value: 0 }, stars: { value: 0.8 } },
+    uniforms: { top: { value: new THREE.Color(topColor) }, bottom: { value: new THREE.Color(bottomColor) }, time: { value: 0 }, stars: { value: 0.8 }, sunDir: { value: new THREE.Vector3(-0.31, 0.53, -0.79).normalize() } },
     vertexShader: 'varying vec3 vDir; void main(){ vDir = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
     fragmentShader: `
-      varying vec3 vDir; uniform vec3 top; uniform vec3 bottom; uniform float time; uniform float stars;
+      varying vec3 vDir; uniform vec3 top; uniform vec3 bottom; uniform float time; uniform float stars; uniform vec3 sunDir;
       float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
       float noise(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f);
         return mix(mix(hash(i), hash(i+vec2(1,0)), f.x), mix(hash(i+vec2(0,1)), hash(i+vec2(1,1)), f.x), f.y); }
@@ -136,6 +136,8 @@ export function buildSky(topColor, bottomColor) {
         vec2 uv = vDir.xz / (vDir.y + 0.35) * 1.6 + vec2(time*0.012, 0.0);
         float cl = smoothstep(0.52, 0.85, fbm(uv)) * smoothstep(0.02, 0.3, vDir.y);
         c = mix(c, vec3(1.0), cl * 0.85);
+        float sd = max(dot(normalize(vDir), sunDir), 0.0);
+        c += vec3(1.0, 0.93, 0.76) * (pow(sd, 900.0) * 3.0 + pow(sd, 40.0) * 0.35 + pow(sd, 6.0) * 0.12);        // sun disc, corona and a warm wash
         gl_FragColor = vec4(c, 1.0);
       }`,
   });

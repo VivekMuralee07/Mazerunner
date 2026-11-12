@@ -130,7 +130,9 @@ export class World {
     }
 
     // overhead arch + hanging things
-    if (rand() < 0.4) this.buildArch(g, biome, m, rand, wallH);
+    const landmark = Math.round(s0 / SEG_LEN) % 7 === 3 && s0 > 100;
+    if (landmark) this.buildLandmark(g, biome, m, rand, wallH);
+    else if (rand() < 0.4) this.buildArch(g, biome, m, rand, wallH);
 
     // banners / hanging flora on walls
     if (biome.id === 'stone' && rand() < 0.6) { const b = M.buildBanner([0x7a1020, 0x1c3a7a, 0x5a2a7a][Math.floor(rand() * 3)]); b.position.set(-(CORRIDOR_HALF - 0.08), 6.2, -(2 + rand() * 20)); b.rotation.y = Math.PI / 2; add(b); }
@@ -202,7 +204,7 @@ export class World {
     const im = new THREE.InstancedMesh(geo, mat, items.length), d = this.dummy, c = new THREE.Color();
     items.forEach((it, i) => {
       d.position.set(it.x, it.y, it.z); d.rotation.set(it.tilt || 0, it.ry || 0, 0); d.scale.set(it.sx, it.sy, it.sz); d.updateMatrix(); im.setMatrixAt(i, d.matrix);
-      if (colors) { c.setHex(colors[Math.floor(rand() * colors.length)]); im.setColorAt(i, c); }
+      if (colors) { c.setHex(colors[Math.floor(rand() * colors.length)]); if (FAM) c.multiplyScalar(0.7 + 0.3 * clamp(it.y / 6, 0, 1)); im.setColorAt(i, c); }
     });
     im.castShadow = true; im.receiveShadow = true; g.add(im);
   }
@@ -258,6 +260,63 @@ export class World {
     if (rand() < 0.7) {
       const st = biome.id === 'crystal' ? M.buildCrystalCluster(0xb36bff, 1.3) : M.buildStatue(m.trim);
       st.position.set(side * (xIn + depth - 2), 0, zc); st.rotation.y = side > 0 ? Math.PI / 2 : -Math.PI / 2; g.add(st);
+    }
+  }
+
+  lmMat(color, o = {}) {
+    this.lm = this.lm || {};
+    const key = color + '|' + (o.em || 0) + '|' + (o.rough ?? 0.7) + '|' + (o.metal || 0);
+    return this.lm[key] || (this.lm[key] = new THREE.MeshStandardMaterial({ color, roughness: o.rough ?? 0.7, metalness: o.metal || 0, emissive: o.em ? color : 0x000000, emissiveIntensity: o.em || 0, flatShading: !!o.flat }));
+  }
+
+  /** A big biome-specific gateway spanning the corridor (well above anything the player can reach). */
+  buildLandmark(g, biome, m, rand, wallH) {
+    const z = -12, S = this.S, add = (o) => { o.castShadow = true; g.add(o); return o; };
+    const mesh = (geo, mat, x, y, zz = z) => { const o = new THREE.Mesh(geo, mat); o.position.set(x, y, zz); return add(o); };
+    const arc = (R, tube, mat) => { const o = new THREE.Mesh(new THREE.TorusGeometry(R, tube, 10, 36, Math.PI), mat); o.position.set(0, wallH, z); return add(o); };
+    const spheresOnArc = (R, n, mat, size, lift = 0.4) => { for (let i = 1; i < n; i++) { const a = (i / n) * Math.PI, sp = new THREE.Mesh(new THREE.IcosahedronGeometry(size * (0.7 + rand() * 0.6), 1), mat); sp.position.set(Math.cos(a) * R, wallH + Math.sin(a) * R + lift, z + (rand() - 0.5) * 0.5); add(sp); } };
+    const id = biome.id;
+    if (id === 'blossom') {                                                       // red torii gate with blossom on top
+      const red = this.lmMat(0xd0302a, { rough: 0.45 }), dark = this.lmMat(0x2a1a1a);
+      for (const sx of [-1, 1]) mesh(new THREE.CylinderGeometry(0.5, 0.62, 11, 14), red, sx * 6.3, 5.5);
+      mesh(new THREE.BoxGeometry(16.4, 0.7, 1.2), red, 0, 11.0); mesh(new THREE.BoxGeometry(17.6, 0.35, 1.5), dark, 0, 11.5);
+      for (const sx of [-1, 1]) { const tip = mesh(new THREE.BoxGeometry(1.8, 0.4, 1.2), dark, sx * 8.6, 11.7); tip.rotation.z = sx * 0.35; }
+      mesh(new THREE.BoxGeometry(13.4, 0.5, 0.8), red, 0, 9.4); mesh(new THREE.BoxGeometry(1.6, 1.8, 0.5), this.lmMat(0x1a1a1a), 0, 10.2);
+      spheresOnArc(5.2, 9, this.bushMat('blossom'), 0.9, 4.2);
+    } else if (id === 'hedge') {                                                  // trellis arch hung with garlands and flowers
+      const wood = this.lmMat(0x8a6a44, { rough: 0.85 }); arc(5.6, 0.42, wood); arc(5.1, 0.22, wood);
+      spheresOnArc(5.6, 18, this.bushMat('hedge'), 0.55, 0.05);
+      const fl = [this.lmMat(0xff7fb0, { em: 0.2 }), this.lmMat(0xffe14a, { em: 0.2 }), this.lmMat(0xffffff, { em: 0.2 })];
+      for (let i = 1; i < 26; i++) { const a = (i / 26) * Math.PI, sp = new THREE.Mesh(new THREE.IcosahedronGeometry(0.2, 0), fl[i % 3]); sp.position.set(Math.cos(a) * 5.6, wallH + Math.sin(a) * 5.6 + 0.2, z + 0.4); g.add(sp); }
+      const lan = M.buildLantern(S, biome.torch); lan.position.set(0, wallH + 5.6 - 0.9, z); g.add(lan);
+    } else if (id === 'stone') {                                                  // great stone arch with a keystone and a banner
+      const st = this.lmMat(0xb9a584, { rough: 0.9 }); arc(5.6, 0.7, st);
+      mesh(new THREE.BoxGeometry(1.8, 1.8, 1.6), st, 0, wallH + 5.6 + 0.2); mesh(new THREE.BoxGeometry(14, 0.6, 1.4), st, 0, wallH + 5.6 + 1.5);
+      for (const sx of [-1, 1]) { mesh(new THREE.BoxGeometry(1.3, 3.2, 1.3), st, sx * 5.6, wallH + 1.6); mesh(new THREE.BoxGeometry(1.7, 0.4, 1.7), st, sx * 5.6, wallH + 3.4); }
+      const bn = M.buildBanner(0x7a1020); bn.position.set(0, wallH + 5.4, z + 0.2); g.add(bn);
+    } else if (id === 'autumn') {                                                 // timber gate with lanterns
+      const wood = this.lmMat(0x6a3f1e, { rough: 0.9 });
+      for (const sx of [-1, 1]) mesh(new THREE.BoxGeometry(1.1, 11, 1.1), wood, sx * 6.4, 5.5);
+      mesh(new THREE.BoxGeometry(15, 0.9, 1.3), wood, 0, 10.6); mesh(new THREE.BoxGeometry(13, 0.5, 0.9), wood, 0, 9.0);
+      spheresOnArc(5.0, 10, this.bushMat('autumn'), 0.8, 3.6);
+      for (const x of [-3.6, 0, 3.6]) { const lan = M.buildLantern(S, biome.torch); lan.position.set(x, 9.0, z + 0.2); g.add(lan); }
+    } else if (id === 'crystal') {                                                // ice arch with spires
+      const ice = this.lmMat(0xbfe8ff, { rough: 0.12, metal: 0.2, em: 0.35, flat: true }); arc(5.6, 0.6, ice);
+      for (let i = 1; i < 14; i++) { const a = (i / 14) * Math.PI, h = 1.4 + rand() * 2, sp = new THREE.Mesh(new THREE.ConeGeometry(0.35, h, 5), ice); sp.position.set(Math.cos(a) * 5.6, wallH + Math.sin(a) * 5.6 + h * 0.4, z); sp.rotation.z = a - Math.PI / 2; add(sp); }
+    } else if (id === 'jungle') {                                                 // overgrown stone arch dripping vines
+      const st = this.lmMat(0x6e8466, { rough: 0.95 }); arc(5.6, 0.75, st);
+      for (let i = 0; i < 22; i++) { const a = rand() * Math.PI, l = 1 + rand() * 4, v = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.03, l, 5), this.leafMat); v.position.set(Math.cos(a) * 5.4, wallH + Math.sin(a) * 5.4 - l / 2, z + (rand() - 0.5) * 0.8); g.add(v); }
+      spheresOnArc(5.6, 14, this.bushMat('jungle'), 0.8, 0.4);
+      const gl = new THREE.Sprite(S.glowSprite(biome.accent, 1)); gl.scale.set(7, 7, 1); gl.position.set(0, wallH + 4.2, z); g.add(gl);
+    } else if (id === 'lava') {                                                   // obsidian arch with a glowing seam
+      const ob = this.lmMat(0x3a2a26, { rough: 0.5, metal: 0.4 }); arc(5.6, 0.7, ob);
+      const hot = new THREE.Mesh(new THREE.TorusGeometry(5.6, 0.2, 8, 36, Math.PI), this.lmMat(0xff6a1a, { em: 1.6 })); hot.position.set(0, wallH, z + 0.55); g.add(hot);
+      for (let i = 1; i < 10; i++) { const a = (i / 10) * Math.PI, h = 1.2 + rand() * 1.6, sp = new THREE.Mesh(new THREE.ConeGeometry(0.4, h, 4), ob); sp.position.set(Math.cos(a) * 5.6, wallH + Math.sin(a) * 5.6 + h * 0.4, z); sp.rotation.z = a - Math.PI / 2; add(sp); }
+    } else {                                                                      // coral palace: coral arch with pearls
+      const cor = this.lmMat(0xff8aa0, { rough: 0.55 }); arc(5.6, 0.6, cor);
+      const pearl = this.lmMat(0xfff5ee, { rough: 0.15, metal: 0.1, em: 0.3 });
+      for (let i = 1; i < 16; i++) { const a = (i / 16) * Math.PI, h = 1 + rand() * 2.2, col = [0xff7f9a, 0xff9a5a, 0x3cc9bd, 0xffd166][i % 4], sp = new THREE.Mesh(new THREE.ConeGeometry(0.3, h, 6), this.lmMat(col, { rough: 0.55 })); sp.position.set(Math.cos(a) * 5.6, wallH + Math.sin(a) * 5.6 + h * 0.4, z); sp.rotation.z = a - Math.PI / 2 + (rand() - 0.5) * 0.5; add(sp); }
+      for (let i = 1; i < 8; i++) { const a = (i / 8) * Math.PI, sp = new THREE.Mesh(new THREE.SphereGeometry(0.34, 12, 8), pearl); sp.position.set(Math.cos(a) * 5.0, wallH + Math.sin(a) * 5.0, z + 0.5); g.add(sp); }
     }
   }
 

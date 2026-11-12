@@ -57,8 +57,7 @@ export class Game {
     this.fill = new THREE.DirectionalLight(0xffe6c8, 0.3); this.fill.position.set(6, 5, 12); scene.add(this.fill);
 
     this.sky = buildSky(BIOMES[0].skyTop, BIOMES[0].skyBottom); scene.add(this.sky);
-    const moon = new THREE.Sprite(new THREE.SpriteMaterial({ map: Tex.glowTexture('rgba(255,255,255,1)', 'rgba(255,240,200,0)'), color: 0xfff2c4, fog: false, depthWrite: false, transparent: true }));
-    moon.scale.set(150, 150, 1); moon.position.set(-110, 190, -300); this.sky.add(moon); this.moon = moon;
+    this.sunDir = this.sky.material.uniforms.sunDir.value;
 
     // composer (MSAA render target + bloom + tone mapping)
     const rt = new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType, samples: 4 });
@@ -66,15 +65,34 @@ export class Game {
     this.composer.addPass(new RenderPass(scene, this.camera));
     this.bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.07, 0.35, 1.05);
     this.composer.addPass(this.bloom);
+    this.rays = new ShaderPass({
+      uniforms: { tDiffuse: { value: null }, sun: { value: new THREE.Vector2(0.3, 1.2) }, intensity: { value: 0.2 } },
+      vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+      fragmentShader: `uniform sampler2D tDiffuse; uniform vec2 sun; uniform float intensity; varying vec2 vUv;
+        void main(){
+          vec4 base = texture2D(tDiffuse, vUv); vec2 dir = (sun - vUv) * (0.95 / 28.0), uv = vUv; float decay = 1.0; vec3 acc = vec3(0.0);
+          for (int i = 0; i < 28; i++) { uv += dir; vec3 s = texture2D(tDiffuse, uv).rgb; float l = dot(s, vec3(0.2126, 0.7152, 0.0722)); acc += s * smoothstep(0.8, 1.5, l) * decay; decay *= 0.94; }
+          gl_FragColor = vec4(base.rgb + acc / 28.0 * intensity * vec3(1.0, 0.94, 0.8), base.a);
+        }`,
+    });
+    this.composer.addPass(this.rays);
     this.composer.addPass(new OutputPass());
     this.grade = new ShaderPass({
-      uniforms: { tDiffuse: { value: null }, sat: { value: 1.1 }, contrast: { value: 1.12 }, vig: { value: 0.3 }, warm: { value: 0.012 } },
+      uniforms: { tDiffuse: { value: null }, res: { value: new THREE.Vector2(1280, 720) }, sat: { value: 1.1 }, contrast: { value: 1.12 }, vig: { value: 0.3 }, warm: { value: 0.012 }, sharp: { value: 0.55 }, ca: { value: 0.0035 }, grain: { value: 0.022 }, time: { value: 0 } },
       vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
-      fragmentShader: `uniform sampler2D tDiffuse; uniform float sat, contrast, vig, warm; varying vec2 vUv;
-        void main(){ vec4 c = texture2D(tDiffuse, vUv); float l = dot(c.rgb, vec3(0.2126, 0.7152, 0.0722));
-          c.rgb = mix(vec3(l), c.rgb, sat); c.rgb = (c.rgb - 0.5) * contrast + 0.5; c.rgb += vec3(warm, warm * 0.4, -warm * 0.6);
-          vec2 q = vUv - 0.5; c.rgb *= 1.0 - vig * smoothstep(0.35, 0.95, length(q * vec2(1.1, 1.0)));
-          gl_FragColor = vec4(clamp(c.rgb, 0.0, 1.0), c.a); }`,
+      fragmentShader: `uniform sampler2D tDiffuse; uniform vec2 res; uniform float sat, contrast, vig, warm, sharp, ca, grain, time; varying vec2 vUv;
+        void main(){
+          vec2 q = vUv - 0.5; vec2 off = q * ca * dot(q, q) * 4.0;
+          vec3 c = vec3(texture2D(tDiffuse, vUv + off).r, texture2D(tDiffuse, vUv).g, texture2D(tDiffuse, vUv - off).b);
+          vec2 px = 1.0 / res;
+          vec3 n = texture2D(tDiffuse, vUv + vec2(px.x, 0.0)).rgb + texture2D(tDiffuse, vUv - vec2(px.x, 0.0)).rgb + texture2D(tDiffuse, vUv + vec2(0.0, px.y)).rgb + texture2D(tDiffuse, vUv - vec2(0.0, px.y)).rgb;
+          c += (c - n * 0.25) * sharp;                                                       // unsharp mask: crisper texture detail
+          float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
+          c = mix(vec3(l), c, sat); c = (c - 0.5) * contrast + 0.5; c += vec3(warm, warm * 0.4, -warm * 0.6);
+          c *= 1.0 - vig * smoothstep(0.35, 0.95, length(q * vec2(1.1, 1.0)));
+          c += (fract(sin(dot(vUv * res + time, vec2(12.9898, 78.233))) * 43758.5453) - 0.5) * grain;     // fine film grain
+          gl_FragColor = vec4(clamp(c, 0.0, 1.0), 1.0);
+        }`,
     });
     this.composer.addPass(this.grade);
 
@@ -126,9 +144,9 @@ export class Game {
     const r = this.renderer;
     const dpr = window.devicePixelRatio || 1;
     const cfg = {
-      high:   { pr: Math.min(dpr, 2), shadow: 2048, bloom: true, shadows: true, samples: 4 },
-      medium: { pr: Math.min(dpr, 1.5), shadow: 1024, bloom: true, shadows: true, samples: 2 },
-      low:    { pr: 1, shadow: 512, bloom: false, shadows: true, samples: 0 },
+      high:   { pr: Math.min(dpr, 2), shadow: 2048, bloom: true, rays: true, shadows: true, samples: 4 },
+      medium: { pr: Math.min(dpr, 1.5), shadow: 1024, bloom: true, rays: false, shadows: true, samples: 2 },
+      low:    { pr: 1, shadow: 512, bloom: false, rays: false, shadows: true, samples: 0 },
     }[q];
     this.cfg = cfg;
     r.setPixelRatio(cfg.pr);
@@ -137,7 +155,7 @@ export class Game {
       this.sun.shadow.mapSize.set(cfg.shadow, cfg.shadow);
       if (this.sun.shadow.map) { this.sun.shadow.map.dispose(); this.sun.shadow.map = null; }
     }
-    this.bloom.enabled = cfg.bloom;
+    this.bloom.enabled = cfg.bloom; this.rays.enabled = cfg.rays;
     for (const t of [this.composer.renderTarget1, this.composer.renderTarget2]) { t.samples = cfg.samples; t.dispose(); }
     this.resize();
   }
@@ -151,6 +169,7 @@ export class Game {
     this.baseFov = w / h < 0.8 ? 80 : w / h < 1.2 ? 70 : 62;
     this.camera.updateProjectionMatrix();
     const bufH = h * this.cfg.pr;
+    this.grade.uniforms.res.value.set(w * this.cfg.pr, bufH);
     this.particles && this.particles.setScale(bufH); this.ambient && this.ambient.setScale(bufH);
   }
 
@@ -635,8 +654,14 @@ export class Game {
     if (Math.abs(cam.fov - fov) > 0.01) { cam.fov += (fov - cam.fov) * damp(3, dt); cam.updateProjectionMatrix(); }
 
     // keep the shadow frustum glued to the player
-    this.moon.position.set(-110, 190, -300);
     this.sky.position.copy(cam.position);
+    this.grade.uniforms.time.value = this.time % 100;
+    if (this.cfg.rays) {                                                               // project the sun to drive the god rays
+      const v = this.tmpSun || (this.tmpSun = new THREE.Vector3());
+      v.copy(this.sunDir).multiplyScalar(400).add(cam.position).project(cam);
+      const vis = v.z < 1 ? clamp(1.7 - Math.max(Math.abs(v.x), Math.abs(v.y)), 0, 1) : 0;
+      this.rays.uniforms.sun.value.set(v.x * 0.5 + 0.5, v.y * 0.5 + 0.5); this.rays.uniforms.intensity.value = 0.22 * vis;
+    }
     for (const h of this.hills) { h.position.x = cam.position.x; h.position.z = cam.position.z; }
     this.composer.render(dt);
   }

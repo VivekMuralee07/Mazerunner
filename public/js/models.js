@@ -320,6 +320,7 @@ export function buildRunner(skin) {
   head.add(mesh(sphereGeo(0.19), mSkin, 0, 0.08, 0));
   const hair = mesh(new THREE.SphereGeometry(0.205, 16, 10, 0, Math.PI * 2, 0, Math.PI * 0.58), mHair, 0, 0.1, 0.02); head.add(hair);
   const hairBack = mesh(sphereGeo(0.17, 12, 8), mHair, 0, 0.0, 0.07); head.add(hairBack);
+  for (let i = 0; i < 5; i++) { const tuft = mesh(coneGeo(0.05, 0.16, 5), mHair, (i - 2) * 0.07, 0.27, 0.03); tuft.rotation.z = (i - 2) * -0.25; tuft.rotation.x = -0.3; head.add(tuft); }
   const eyeMat = new THREE.MeshBasicMaterial({ color: 0x14141a });
   for (const sx of [-1, 1]) head.add(mesh(sphereGeo(0.03, 8, 6), eyeMat, sx * 0.07, 0.09, -0.175, false));
   const band = mesh(cylGeo(0.2, 0.2, 0.05, 16), mAccent, 0, 0.17, 0); head.add(band);
@@ -352,6 +353,28 @@ export function buildRunner(skin) {
   scarf.update(0, 15, 0, true);
   const scarfRing = mesh(cylGeo(0.14, 0.17, 0.08, 12), mAccent, 0, 0.58, 0); hips.add(scarfRing);
 
+  // short cape: a second, wider ribbon that streams behind the shoulders
+  const CR = 8, capeGeo = new THREE.BufferGeometry();
+  capeGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(CR * 2 * 3), 3).setUsage(THREE.DynamicDrawUsage));
+  const cidx = []; for (let j = 0; j < CR - 1; j++) { const a2 = j * 2; cidx.push(a2, a2 + 1, a2 + 2, a2 + 1, a2 + 3, a2 + 2); }
+  capeGeo.setIndex(cidx);
+  const capeMat = M(skin.tunic, 0.8, { side: THREE.DoubleSide, emissive: skin.tunic, emissiveIntensity: 0.08 });
+  const capeMesh = new THREE.Mesh(capeGeo, capeMat); capeMesh.frustumCulled = false; capeMesh.castShadow = true; hips.add(capeMesh);
+  const cape = {
+    update(t, speed, lean, grounded) {
+      const pos = capeGeo.attributes.position, len = 0.5 + Math.min(1.2, speed / 30) * 0.55;
+      for (let j = 0; j < CR; j++) {
+        const k = j / (CR - 1), w = 0.2 + k * 0.1;
+        const cx = Math.sin(t * 6 - k * 4) * 0.07 * k + lean * 0.18 * k;
+        const cy = 0.55 - k * (grounded ? 0.5 : 0.35) + Math.sin(t * 8 - k * 5) * 0.05 * k;
+        const cz = 0.2 + k * len;
+        pos.setXYZ(j * 2, cx - w, cy, cz); pos.setXYZ(j * 2 + 1, cx + w, cy, cz);
+      }
+      pos.needsUpdate = true; capeGeo.computeVertexNormals();
+    },
+  };
+  cape.update(0, 15, 0, true);
+
   const mkLimb = (r, len, mat, x, y, handMat) => {
     const piv = new THREE.Group(); piv.position.set(x, y, 0);
     piv.add(mesh(capsuleGeo(r, len), mat, 0, -len / 2 - r * 0.6, 0));
@@ -366,7 +389,7 @@ export function buildRunner(skin) {
   hips.add(legL, legR);
   for (const l of [legL, legR]) { const foot = mesh(boxGeo(0.17, 0.1, 0.3), mBoot, 0, -0.64, -0.05); l.add(foot); l.userData.foot = foot; }
 
-  const rig = { root, body, inner, hips, torso, neck, head, armL, armR, legL, legR, scarf, mats: [mSkin, mTunic, mPants, mHair, mAccent, mBoot, scarfMat], pack };
+  const rig = { root, body, inner, hips, torso, neck, head, armL, armR, legL, legR, scarf, mats: [mSkin, mTunic, mPants, mHair, mAccent, mBoot, scarfMat], pack, cape };
   root.userData.rig = rig;
   return root;
 }
