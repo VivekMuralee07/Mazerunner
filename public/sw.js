@@ -2,7 +2,7 @@
 //  * App code (HTML / JS / CSS / manifest): NETWORK FIRST, so the page and its scripts are always the same version.
 //    If the network is slow (>4 s) or offline, the last cached copy is used.
 //  * Vendor libraries and icons: stale-while-revalidate (they only change with a new deploy).
-const CACHE = 'labyrinth-run-v11';
+const CACHE = 'labyrinth-run-v12';
 const SHELL = [
   '/', '/index.html', '/css/style.css', '/manifest.webmanifest',
   '/js/main.js', '/js/game.js', '/js/world.js', '/js/track.js', '/js/player.js', '/js/chaser.js', '/js/models.js', '/js/textures.js',

@@ -408,8 +408,9 @@ export class World {
         continue;
       }
       const u = clamp(dist, sd.s0, sd.s1) - sd.s0, h = this.profile(sd, u);
-      if (sd.type === 'block' && py >= h - PLAYER.slabStep) { ground = Math.max(ground, h); continue; }
-      if (py < h - (sd.type === 'block' ? PLAYER.slabStep : 0.05)) hits.push({ sd, kind: dx > sd.hw - 0.2 || sd.lane === enteredLane || (ownLane >= 0 && sd.lane !== ownLane) ? 'side' : 'front' });
+      const air = py > 0.12, forgive = sd.type === 'block' ? (air ? PLAYER.slabAirStep : PLAYER.slabStep) : sd.type === 'low' ? PLAYER.lowForgive : 0.05;   // medium obstacles are easy to jump
+      if (sd.type === 'block' && py >= h - forgive) { ground = Math.max(ground, h); continue; }
+      if (py < h - forgive) hits.push({ sd, kind: dx > sd.hw - 0.2 || sd.lane === enteredLane || (ownLane >= 0 && sd.lane !== ownLane) ? 'side' : 'front' });
     }
     return { ground, hits };
   }

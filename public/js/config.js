@@ -19,7 +19,9 @@ export const PLAYER = {
   laneSpeed: 30,
   rollTime: 0.62,
   stepUp: 0.42,   // how much a surface may rise in one go before it counts as a wall
-  slabStep: 0.8,  // teal slabs are more forgiving: a slightly late jump still lands on top (the player is 0.65 m up by then)
+  slabStep: 0.8,      // teal slabs: from the ground a run-up this high counts as a step
+  slabAirStep: 1.0,   // ...but once you have jumped, any contact within a metre of the slab top vaults you onto it (so a jump anywhere in its arc works)
+  lowForgive: 0.28,   // orange barricades: a jump clears them as soon as you are ~0.35 m up
 };
 
 export const SPEED = {
