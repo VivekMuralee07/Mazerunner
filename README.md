@@ -19,6 +19,7 @@ model and sound is generated procedurally.
 ## Rules (Subway Surfers, but in a maze)
 
 * **Endless auto-run on three lanes.** Speed ramps up the longer you survive.
+* **Temple Run-style corners and zig-zags.** The corridor turns 90° left or right. An arrow warns you (on screen and painted on the floor/wall); **swipe toward the arrow** (← / →) as you reach the junction to turn. Miss it and you hit the wall. Sometimes the corners come back-to-back as a zig-zag. The Spirit Shield, flying and revives turn the corner for you. Junctions are always kept clear of obstacles.
 * **Obstacles**
   * 🟠 **Spiked barrier** – jump it. Hitting it is a *stumble*.
   * 🔴 **Spike beam** – roll under it. Jumping into it is a *stumble*.
@@ -33,10 +34,10 @@ model and sound is generated procedurally.
 * **Missions** – three at a time. Finish all three to raise your **permanent score multiplier** (up to ×10) and earn coin rewards.
 * **Revive** after a crash by paying coins (price doubles each time, up to 3 revives per run).
 * **Shop** – 6 outfits and 4 power-up upgrade tracks (5 levels each).
-* **Four biomes** that blend into each other every 1.5 km: *Overgrown Maze → Forgotten Ruins → Crystal Depths → Ember Halls*,
-  each with its own materials, lighting, fog, sky and decor. Side openings and arches make the corridor feel like a maze.
+* **Eight biomes** that blend into each other every 1.5 km: *Sunlit Garden Maze → Cherry Blossom Gardens → Golden Ruins → Autumn Orchard → Frozen Crystal Gardens → Overgrown Temple → Ember Canyon → Sunken Coral Palace*,
+  each with its own procedural materials, lighting, fog, sky, decor, scattered props (flowers, pebbles, mushrooms, shells) and weather (falling blossom, leaves, snow, fireflies, embers, bubbles). Side openings and arches make the corridor feel like a maze.
 * **Colour-coded obstacles** stand out from the muted maze: orange/black hazard barriers (jump), red/white spike beams (roll), crimson sealed gates (dodge), teal chevron slabs (ride).
-* **Persistent stats.** Progress (coins, best score, lifetime stats, outfits, upgrades, missions, settings) is saved on the device (`localStorage` + an IndexedDB mirror, with a persistent-storage request) **and** on the server, keyed by an anonymous player id. Players can see a **leaderboard**, set a nickname, and use their **recovery code** (Settings) to restore progress after switching phones or clearing data.
+* **Persistent stats.** Progress (coins, best score, lifetime stats, outfits, upgrades, missions, settings) is saved on the device (`localStorage` + an IndexedDB mirror, with a persistent-storage request) **and** on the server, keyed by an anonymous player id. Players are asked for a name on first launch and appear on a shared **global leaderboard** (top 50, with their own rank), and can change it in Settings; and use their **recovery code** (Settings) to restore progress after switching phones or clearing data.
 
 The generator enforces a **fairness invariant**: wherever you happen to be standing, the next row of obstacles always leaves
 a way through, so you can never be handed an unavoidable crash.
@@ -97,11 +98,12 @@ public/
   js/
     main.js            boot + wiring
     game.js            state machine, physics integration, collisions, power-ups, camera, atmosphere, adaptive quality
+    track.js           the path: straight legs joined by 90° corners (turns, zig-zags, camera swing)
     world.js           segment generator, maze decor, obstacle/coin/pick-up spawner with the fairness invariant
     player.js          runner controller + procedural animation
     chaser.js          the Minotaur
     models.js          every 3D model, built from primitives
-    textures.js        procedural PBR textures for the four biomes
+    textures.js        procedural PBR textures for the eight biomes
     fx.js              GPU-friendly particles, ambient embers, starry sky shader
     audio.js           synthesised SFX and a procedural score that intensifies with speed
     input.js           keyboard + swipe controls
@@ -119,7 +121,7 @@ live in [`public/js/config.js`](public/js/config.js).
 
 `scripts/smoke-test.mjs` drives the real game in headless Chromium: it verifies each rule (ramps, slabs, stumble/caught logic,
 shield, wings, boots, magnet, coins, scoring, revive, saving), the shop/missions/settings UI, keyboard and swipe input, that the
-canvas actually renders, and fuzzes ~10 simulated minutes of bot play across all four biomes.
+canvas actually renders, and fuzzes ~10 simulated minutes of bot play across all eight biomes.
 
 ```bash
 npm i -g playwright && npx playwright install chromium   # one-off, not a runtime dependency

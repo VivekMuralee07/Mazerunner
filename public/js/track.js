@@ -16,7 +16,7 @@ export class Track {
   constructor(root, rand, startDist) {
     this.root = root; this.rand = rand;
     this.legs = []; this.corners = [];
-    this.nextK = 0; this.cum = 0; this.lastDir = 0; this.sameRun = 0; this.zig = 0;
+    this.nextK = 0; this.zig = 0;
     this.theta = 0; this.thetaTarget = 0;                       // visual heading (smoothed) and the heading we are turning toward
     const segStart = Math.floor((startDist - 96) / SEG_LEN) * SEG_LEN;
     // first corner: not before ~300 m so new players get a run-up
@@ -30,30 +30,30 @@ export class Track {
     this.root.add(leg.group);
     this.legs.push(leg);
     // the corner that ends this leg (direction is planned now so everything ahead knows about it)
-    const dir = this.pickDir(leg.b);
+    const dir = this.pickDir(theta);
     const corner = { s: leg.b, dir, leg: leg.k, newTheta: theta + dir * HALF_PI, accepted: false, executed: false, wall: null, built: false };
     this.corners.push(corner);
     leg.corner = corner;
     return leg;
   }
 
-  /** Left (+1) or right (-1): never three the same way in a row and never wind past a half turn, so the path can't loop. */
-  pickDir(s) {
-    let dir = this.rand() < 0.5 ? 1 : -1;
-    if (this.zig > 0) dir = -this.lastDir || dir;                // zig-zag clusters alternate
-    if (this.sameRun >= 2 && dir === this.lastDir) dir = -dir;
-    if (Math.abs(this.cum + dir) > 2) dir = -dir;
-    this.sameRun = dir === this.lastDir ? this.sameRun + 1 : 1;
-    this.lastDir = dir; this.cum += dir;
-    return dir;
+  /**
+   * Left (+1) or right (-1). The path may only head forward or sideways, never back: a sideways leg must turn back to
+   * forward. That makes the track zig-zag like a staircase and makes it impossible for it to ever cross itself
+   * (forward legs sit at strictly increasing depths, sideways legs are 80 m+ apart).
+   */
+  pickDir(theta) {
+    if (theta > 0.1) return -1;                         // heading left  -> turn right, back to forward
+    if (theta < -0.1) return 1;                         // heading right -> turn left, back to forward
+    return this.rand() < 0.5 ? 1 : -1;
   }
 
-  planLength(b) {
-    const r = this.rand;
-    const tight = Math.min(1, b / 6000);
-    if (this.zig > 0) { this.zig--; return 3 + Math.floor(r() * 2); }              // zig-zag: short legs, 72-96 m apart
-    if (b > 500 && r() < 0.3) { this.zig = 1 + Math.floor(r() * 3); return 3 + Math.floor(r() * 2); }
-    return Math.round(8 + r() * (14 - 6 * tight));                                  // 190-530 m early, shorter later
+  planLength(b, theta) {
+    const r = this.rand, sideways = Math.abs(theta) > 0.1, tight = Math.min(1, b / 6000);
+    if (this.zig > 0) { this.zig--; return 3 + Math.floor(r() * 2); }                // zig-zag run: short legs, 72-96 m apart
+    if (!sideways && b > 500 && r() < 0.3) { this.zig = 2 + Math.floor(r() * 4); return 3 + Math.floor(r() * 2); }
+    if (sideways) return 4 + Math.floor(r() * 6);                                     // 100-220 m sideways
+    return Math.round(8 + r() * (14 - 6 * tight));                                    // 190-530 m early, shorter later
   }
 
   /** Make sure legs (and so corners) exist up to track position s. */
@@ -62,7 +62,7 @@ export class Track {
       const last = this.legs[this.legs.length - 1], c = last.corner;
       const u = last.b - last.a, f = forward(last.theta);
       const P = { x: last.P.x + f.x * u, z: last.P.z + f.z * u };
-      this.addLeg(last.b, c.newTheta, P, this.planLength(last.b));
+      this.addLeg(last.b, c.newTheta, P, this.planLength(last.b, c.newTheta));
     }
   }
 
