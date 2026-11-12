@@ -130,6 +130,7 @@ const MIME = {
   '.ico': 'image/x-icon',
   '.webmanifest': 'application/manifest+json',
   '.txt': 'text/plain; charset=utf-8',
+  '.mp3': 'audio/mpeg',
 };
 const COMPRESSIBLE = new Set(['.html', '.js', '.mjs', '.css', '.json', '.svg', '.webmanifest', '.txt']);
 
