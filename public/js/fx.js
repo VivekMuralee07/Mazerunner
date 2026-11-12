@@ -82,7 +82,7 @@ export class Ambient {
   constructor(scene, count = 140) {
     this.count = count;
     this.pos = new Float32Array(count * 3); this.col = new Float32Array(count * 4); this.size = new Float32Array(count);
-    this.seed = new Float32Array(count);
+    this.seed = new Float32Array(count); this.base = new Float32Array(count); this.rise = 0.12; this.sizeMul = 1;
     for (let i = 0; i < count; i++) this.respawn(i, true);
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(this.pos, 3));
@@ -97,18 +97,23 @@ export class Ambient {
   respawn(i, initial) {
     this.pos[i * 3] = (Math.random() - 0.5) * 8.4; this.pos[i * 3 + 1] = 0.3 + Math.random() * 6;
     this.pos[i * 3 + 2] = initial ? -Math.random() * 140 + 8 : -140 - Math.random() * 10;
-    this.seed[i] = Math.random() * 100; this.size[i] = 0.06 + Math.random() * 0.12;
+    this.seed[i] = Math.random() * 100; this.base[i] = 0.06 + Math.random() * 0.12; this.size[i] = this.base[i] * this.sizeMul;
+    if (!initial && this.rise < 0) this.pos[i * 3 + 1] = 6.5 + Math.random() * 0.8;
   }
   setColor(c) { this.color.set(c); }
+  /** rise > 0: drifting up (embers, dust); rise < 0: falling (leaves, snow). */
+  setMode(rise, sizeMul, color) { this.rise = rise; this.sizeMul = sizeMul; this.fixedColor = color; this.fc = null; }
   update(dt, speed, time) {
     for (let i = 0; i < this.count; i++) {
       const k = i * 3, sd = this.seed[i];
       this.pos[k + 2] += speed * dt;
       this.pos[k] += Math.sin(time * 0.7 + sd) * 0.25 * dt;
-      this.pos[k + 1] += (Math.sin(time * 0.9 + sd * 1.7) * 0.3 + 0.12) * dt;
-      if (this.pos[k + 2] > 9 || this.pos[k + 1] > 7) this.respawn(i, false);
+      this.pos[k + 1] += (Math.sin(time * 0.9 + sd * 1.7) * 0.3 + this.rise) * dt;
+      this.size[i] = this.base[i] * this.sizeMul;
+      if (this.pos[k + 2] > 9 || this.pos[k + 1] > 7.2 || this.pos[k + 1] < 0.1) this.respawn(i, false);
       const tw = 0.5 + 0.5 * Math.sin(time * 2 + sd * 3), fade = Math.min(1, (140 + this.pos[k + 2]) / 25);
-      this.col.set([this.color.r, this.color.g, this.color.b, 0.7 * tw * fade], i * 4);
+      const fc = this.fixedColor !== undefined ? this.fc || (this.fc = new THREE.Color(this.fixedColor)) : this.color;
+      this.col.set([fc.r, fc.g, fc.b, 0.85 * tw * fade], i * 4);
     }
     const g = this.points.geometry; g.attributes.position.needsUpdate = true; g.attributes.color.needsUpdate = true;
   }

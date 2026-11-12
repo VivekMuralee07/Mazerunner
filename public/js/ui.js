@@ -223,8 +223,8 @@ export class UI {
   // ------------------------------------------------------------------ game over
   showGameOver(d) {
     this.hud(false);
-    $('#goTitle').textContent = d.cause === 'caught' ? 'Caught!' : 'Crushed!';
-    $('#goCause').textContent = d.cause === 'caught' ? 'The Minotaur caught up with you in the dark.' : 'You ran straight into the maze’s stone.';
+    $('#goTitle').textContent = d.cause === 'caught' ? 'Caught!' : d.cause === 'boulder' ? 'Flattened!' : 'Crushed!';
+    $('#goCause').textContent = d.cause === 'caught' ? 'The Minotaur caught up with you.' : d.cause === 'boulder' ? 'A boulder rolled right over you.' : 'You ran straight into the maze’s stone.';
     $('#goScore').textContent = fmt(d.score);
     $('#goBest').classList.toggle('hidden', !d.newBest);
     $('#goBestVal').textContent = fmt(d.best); $('#goDist').textContent = `${fmt(d.distance)} m`; $('#goCoins').textContent = fmt(d.coins);

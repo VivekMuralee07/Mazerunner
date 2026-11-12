@@ -35,7 +35,7 @@ export class Player {
     this.lane = 1; this.target = 1; this.prevLane = 1;
     this.x = LANES[1]; this.y = 0; this.vy = 0; this.grounded = true;
     this.rollT = 0; this.rollOnLand = false; this.stumbleT = 0; this.invuln = 0;
-    this.flying = false; this.flyY = 5.4; this.dead = false; this.deadT = 0; this.caught = false;
+    this.flying = false; this.flyY = 7.5; this.dead = false; this.deadT = 0; this.caught = false;
     this.boots = false; this.buf = { jump: 0, roll: 0 };
     this.phase = 0; this.landSquash = 0; this.laneLean = 0; this.idle = false; this.time = 0;
     this.stepAcc = 0; this.onSlab = false; this.laneAge = 9;

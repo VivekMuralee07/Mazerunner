@@ -211,6 +211,44 @@ try {
   check('Jetpack collects the sky coin trail', r.coins > 15, `coins ${r.coins}`);
   check('Jetpack pick-up exists in the spawn pool', await page.evaluate(async () => (await (await fetch('/js/world.js')).text()).includes("'jetpack'")));
 
+  console.log('Boulder');
+  r = await page.evaluate(() => {
+    const g = window.__game, T = window.T; T.start(); g.boulderT = 1e9;
+    const b = g.world.addBoulder(1, g.dist + 45, 14); g.boulder = b; T.until(() => g.state === 'dying', 8);
+    return { st: g.state, cause: g.cause };
+  });
+  check('a boulder rolling down your lane kills you', r.st === 'dying' && r.cause === 'boulder', JSON.stringify(r));
+  r = await page.evaluate(() => {
+    const g = window.__game, T = window.T; T.start(); g.boulderT = 1e9;
+    const b = g.world.addBoulder(1, g.dist + 120, 14); g.boulder = b; let moved = false, homed = 0;
+    const x0 = b.x; g.player.moveLane(1); T.run(1.5); homed = b.x;         // player stepped right: the boulder should follow while far away
+    T.until(() => { if (!moved && b.s0 - g.dist < 22) { moved = true; g.action('left'); } return b.s1 < g.dist - 2; }, 12, () => {});
+    return { st: g.state, locked: b.locked, homed: +homed.toFixed(2), x0, counted: !!b.counted, lane: g.player.target };
+  });
+  check('the boulder homes in on you from afar, then locks its lane', r.homed > 0.5 && r.locked, JSON.stringify(r));
+  check('a late lane change dodges the boulder (and scores a bonus)', r.st === 'running' && r.counted, JSON.stringify(r));
+  r = await page.evaluate(() => { const g = window.__game, T = window.T; T.start(); g.boulderT = 1e9; let maxY = 0; const b = g.world.addBoulder(1, g.dist + 40, 14); g.boulder = b; T.until(() => g.state === 'dying' || b.s1 < g.dist - 2, 8, () => { if (b.s0 - g.dist < 10 && g.player.grounded) g.action('jump'); maxY = Math.max(maxY, g.player.y); }); return { st: g.state, maxY: +maxY.toFixed(2) }; });
+  check('jumping does not clear a boulder', r.st === 'dying', JSON.stringify(r));
+  r = await page.evaluate(() => { const g = window.__game, T = window.T; T.start(); g.boulderT = 1e9; g.grant('shield', 0, 1); const b = g.world.addBoulder(1, g.dist + 40, 14); g.boulder = b; T.until(() => b.s1 < g.dist - 2 || g.state === 'dying', 8); return { st: g.state, shield: g.shield }; });
+  check('the Spirit Shield smashes a boulder', r.st === 'running' && !r.shield, JSON.stringify(r));
+  r = await page.evaluate(() => { const g = window.__game, T = window.T; T.start(); g.boulderT = 1e9; g.grant('jetpack', 0, 1); const b = g.world.addBoulder(1, g.dist + 40, 14); g.boulder = b; T.until(() => b.s1 < g.dist - 2 || g.state === 'dying', 8); return { st: g.state }; });
+  check('you fly safely over a boulder with the jetpack', r.st === 'running', JSON.stringify(r));
+  r = await page.evaluate(() => {
+    const g = window.__game, T = window.T; T.start(); g.boulderT = 0.5; g.dist = 400; g.world.reset(3, 400); let seen = 0, t = 0;
+    for (let i = 0; i < 60 * 70 && g.state === 'running'; i++) { g.step(1 / 60); if (g.boulder && !seen) seen = i / 60; }
+    return { seen: +seen.toFixed(1), spawned: !!seen };
+  });
+  check('boulders appear on their own at random times', r.spawned, JSON.stringify(r));
+  r = await page.evaluate(() => {
+    const g = window.__game, w = g.world; w.reset(77, 0); let jets = 0; const orig = w.addPickup.bind(w);
+    w.addPickup = (t, ...a) => { if (t === 'jetpack') jets++; return orig(t, ...a); };
+    for (let d = 0; d < 30000; d += 25) { w.update(0.016, d, 25, 0); w.solids.length = 0; w.pickups.length = 0; w.coins.length = 0; }
+    return { jets };
+  });
+  check('jetpacks are rare (a handful per 30 km)', r.jets >= 2 && r.jets <= 14, JSON.stringify(r));
+  r = await page.evaluate(() => { const g = window.__game, T = window.T; T.start(); g.grant('jetpack', 0, 1); T.run(1.2); const ys = g.world.coins.map((c) => c.y); const xs = g.world.coins.map((c) => c.x); return { n: ys.length, minY: Math.min(...ys), spread: +(Math.max(...xs) - Math.min(...xs)).toFixed(1), scale: g.world.coins[0].scale }; });
+  check('jetpack coins form big, high, flowing ribbons across the lanes', r.n > 30 && r.minY > 6.5 && r.spread > 3 && r.scale > 1.2, JSON.stringify(r));
+
   console.log('Persistent stats (server + device)');
   r = await page.evaluate(async () => {
     const id = crypto.randomUUID(), put = (i, b) => fetch(`/api/save/${i}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(b) });
@@ -322,6 +360,10 @@ try {
       }
       const cur = p.target; let want = cur;
       if (!safe[1][cur]) for (const m of [cur - 1, cur + 1]) if (m >= 0 && m <= 2 && canEnter(m, g.dist) && safe[1][m]) { want = m; break; }
+      const LX = [-2.4, 0, 2.4], bl = w.solids.find((sd) => sd.type === 'boulder' && !sd.ghost && sd.locked && sd.s1 > g.dist - 1);
+      if (bl && bl.s0 - g.dist < 28 && Math.abs(LX[cur] - bl.x) < 1.6) {            // sidestep a boulder that has locked onto our lane
+        for (const m of [cur - 1, cur + 1]) if (m >= 0 && m <= 2 && Math.abs(LX[m] - bl.x) > 1.8 && !fatal(m, g.dist + 3) && canEnter(m, g.dist)) { want = m; break; }
+      }
       if (want !== cur) g.action(want < cur ? 'left' : 'right');
       let near = null;
       for (const sd of sols) if (sd.lane === p.target && (sd.type === 'low' || sd.type === 'high')) { const d = sd.s0 - g.dist; if (d > -0.3 && (!near || d < near.d)) near = { d, type: sd.type }; }

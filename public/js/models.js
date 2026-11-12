@@ -238,14 +238,14 @@ export function buildStatue(mat) {
 }
 
 // ---------------------------------------------------------------- collectibles
+/** Coins are two instanced meshes sharing one matrix list: a textured face and a darker gold rim for a bevelled look. */
 export function buildCoinMesh(coinTex, capacity) {
-  const geo = new THREE.CylinderGeometry(0.4, 0.4, 0.09, 24);
-  geo.rotateX(Math.PI / 2); // face toward ±z so spinning about Y shows the face
-  const mat = new THREE.MeshStandardMaterial({ map: coinTex, color: 0xffffff, roughness: 0.35, metalness: 0.25, emissive: 0xffb300, emissiveIntensity: 0.75, emissiveMap: coinTex });
-  const im = new THREE.InstancedMesh(geo, mat, capacity);
-  im.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-  im.frustumCulled = false; im.castShadow = false; im.count = 0;
-  return im;
+  const faceGeo = new THREE.CylinderGeometry(0.36, 0.36, 0.1, 28); faceGeo.rotateX(Math.PI / 2);
+  const rimGeo = new THREE.TorusGeometry(0.38, 0.07, 10, 28);
+  const faceMat = new THREE.MeshStandardMaterial({ map: coinTex, roughness: 0.28, metalness: 0.45, emissive: 0xffb300, emissiveIntensity: 0.65, emissiveMap: coinTex });
+  const rimMat = new THREE.MeshStandardMaterial({ color: 0xe0a000, roughness: 0.22, metalness: 0.8, emissive: 0x8a5a00, emissiveIntensity: 0.6 });
+  const mk = (g, m) => { const im = new THREE.InstancedMesh(g, m, capacity); im.instanceMatrix.setUsage(THREE.DynamicDrawUsage); im.frustumCulled = false; im.count = 0; return im; };
+  return { face: mk(faceGeo, faceMat), rim: mk(rimGeo, rimMat) };
 }
 
 const iconCache = {};
@@ -323,6 +323,8 @@ export function buildRunner(skin) {
   const eyeMat = new THREE.MeshBasicMaterial({ color: 0x14141a });
   for (const sx of [-1, 1]) head.add(mesh(sphereGeo(0.03, 8, 6), eyeMat, sx * 0.07, 0.09, -0.175, false));
   const band = mesh(cylGeo(0.2, 0.2, 0.05, 16), mAccent, 0, 0.17, 0); head.add(band);
+  const lensMat = new THREE.MeshStandardMaterial({ color: 0x7fe9ff, roughness: 0.1, metalness: 0.4, emissive: 0x2fc8ff, emissiveIntensity: 0.6 });
+  for (const sx of [-1, 1]) { head.add(mesh(sphereGeo(0.062, 12, 8), lensMat, sx * 0.075, 0.2, -0.155, false)); head.add(mesh(new THREE.TorusGeometry(0.066, 0.014, 6, 14), mBoot, sx * 0.075, 0.2, -0.158, false)); }
 
   // scarf: one continuous ribbon whose vertices are animated every frame
   const ROWS = 9, scarfGeo = new THREE.BufferGeometry();
@@ -356,6 +358,8 @@ export function buildRunner(skin) {
     if (handMat) piv.add(mesh(sphereGeo(r * 1.15, 8, 6), handMat, 0, -len - r * 1.4, 0));
     return piv;
   };
+  for (const sx of [-1, 1]) hips.add(mesh(sphereGeo(0.115, 12, 8), mAccent, sx * 0.29, 0.58, 0));
+  const strap = mesh(boxGeo(0.07, 0.62, 0.04), mBoot, 0, 0.32, -0.17); strap.rotation.z = 0.55; hips.add(strap);
   const armL = mkLimb(0.075, 0.36, mTunic, -0.3, 0.52, mSkin), armR = mkLimb(0.075, 0.36, mTunic, 0.3, 0.52, mSkin);
   hips.add(armL, armR);
   const legL = mkLimb(0.105, 0.42, mPants, -0.12, -0.02, mBoot), legR = mkLimb(0.105, 0.42, mPants, 0.12, -0.02, mBoot);
@@ -471,5 +475,58 @@ export function buildJetpack() {
   }
   g.add(mesh(boxGeo(0.5, 0.1, 0.12), dark, 0, 0.12, -0.04));
   g.userData = { flames };
+  return g;
+}
+
+// ---------------------------------------------------------------- the boulder
+function rockCanvases() {
+  const S = 512, mk = () => { const c = document.createElement('canvas'); c.width = c.height = S; return c; };
+  const c = mk(), x = c.getContext('2d'), e = mk(), ex = e.getContext('2d');
+  let seed = 7; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  x.fillStyle = '#4a423d'; x.fillRect(0, 0, S, S); ex.fillStyle = '#000'; ex.fillRect(0, 0, S, S);
+  for (let i = 0; i < 900; i++) {
+    const px = rnd() * S, py = rnd() * S, r = 4 + rnd() * 22, v = 45 + rnd() * 55;
+    x.fillStyle = `rgba(${v + 12},${v + 4},${v - 6},0.5)`; x.beginPath(); x.ellipse(px, py, r, r * 0.7, rnd() * 3, 0, 6.28); x.fill();
+  }
+  for (let k = 0; k < 22; k++) {                       // glowing cracks: the thing is angry
+    let px = rnd() * S, py = rnd() * S, a = rnd() * 6.28;
+    for (let i = 0; i < 26; i++) {
+      const nx = px + Math.cos(a) * 14, ny = py + Math.sin(a) * 14;
+      x.strokeStyle = 'rgba(25,15,10,0.8)'; x.lineWidth = 5; x.beginPath(); x.moveTo(px, py); x.lineTo(nx, ny); x.stroke();
+      ex.strokeStyle = '#ff6a1a'; ex.lineWidth = 6; ex.beginPath(); ex.moveTo(px, py); ex.lineTo(nx, ny); ex.stroke();
+      px = (nx + S) % S; py = (ny + S) % S; a += (rnd() - 0.5) * 0.9;
+    }
+  }
+  return { c, e };
+}
+let warnTex = null;
+function warningTexture() {                           // red arrows pointing at the player
+  if (warnTex) return warnTex;
+  const c = document.createElement('canvas'); c.width = 64; c.height = 128; const x = c.getContext('2d');
+  x.clearRect(0, 0, 64, 128); x.fillStyle = 'rgba(255,40,40,0.28)'; x.fillRect(0, 0, 64, 128);
+  x.strokeStyle = '#ff1f1f'; x.lineWidth = 18; x.lineJoin = 'miter';
+  x.beginPath(); x.moveTo(6, 34); x.lineTo(32, 84); x.lineTo(58, 34); x.stroke();
+  warnTex = new THREE.CanvasTexture(c); warnTex.wrapS = warnTex.wrapT = THREE.RepeatWrapping; warnTex.colorSpace = THREE.SRGBColorSpace; warnTex.repeat.set(1, 14);
+  return warnTex;
+}
+let rockMat = null;
+export function buildBoulder(S) {
+  const g = new THREE.Group(), R = 1.25;
+  if (!rockMat) {
+    const { c, e } = rockCanvases();
+    const map = new THREE.CanvasTexture(c), em = new THREE.CanvasTexture(e); map.colorSpace = em.colorSpace = THREE.SRGBColorSpace; map.wrapS = map.wrapT = em.wrapS = em.wrapT = THREE.RepeatWrapping;
+    rockMat = new THREE.MeshStandardMaterial({ map, bumpMap: map, bumpScale: 4, emissiveMap: em, emissive: 0xff4a10, emissiveIntensity: 1.5, roughness: 0.85, flatShading: false });
+  }
+  const geo = new THREE.IcosahedronGeometry(R, 4), p = geo.attributes.position, v = new THREE.Vector3();
+  for (let i = 0; i < p.count; i++) {                  // lumpy, irregular rock
+    v.fromBufferAttribute(p, i); const n = Math.sin(v.x * 3.1) * Math.sin(v.y * 2.7 + 1) * Math.sin(v.z * 3.5 + 2);
+    v.multiplyScalar(1 + n * 0.13); p.setXYZ(i, v.x, v.y, v.z);
+  }
+  geo.computeVertexNormals();
+  const rock = new THREE.Mesh(geo, rockMat); rock.position.set(0, R, -R); rock.castShadow = true; g.add(rock);
+  const glow = new THREE.Sprite(S.glowSprite(0xff3a10, 1)); glow.scale.set(7, 7, 1); glow.position.set(0, R, -R); g.add(glow);
+  const mark = new THREE.Mesh(new THREE.PlaneGeometry(2.3, 30), new THREE.MeshBasicMaterial({ map: warningTexture(), transparent: true, depthWrite: false, opacity: 1 }));
+  mark.rotation.x = -Math.PI / 2; mark.position.set(0, 0.05, 15); g.add(mark);
+  g.userData = { rock, glow, mark };
   return g;
 }

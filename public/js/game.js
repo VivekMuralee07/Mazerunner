@@ -3,6 +3,7 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 
 import { BIOMES, BIOME_LEN, LANES, SPEED, POWERUPS, SKINS, PLAYER } from './config.js';
 import * as Store from './storage.js';
@@ -51,7 +52,7 @@ export class Game {
     this.sun = new THREE.DirectionalLight(0xbfe6ff, 1.5); this.sun.position.set(-9, 20, 8); this.sun.target.position.set(0, 0, -14);
     this.sun.castShadow = true;
     const sc = this.sun.shadow.camera; sc.left = -13; sc.right = 13; sc.top = 40; sc.bottom = -26; sc.near = 1; sc.far = 70;
-    this.sun.shadow.bias = -0.0006; this.sun.shadow.normalBias = 0.04;
+    this.sun.shadow.bias = -0.0006; this.sun.shadow.normalBias = 0.04; this.sun.shadow.radius = 3; this.sun.shadow.blurSamples = 10;
     scene.add(this.sun, this.sun.target);
     this.fill = new THREE.DirectionalLight(0xffe6c8, 0.5); this.fill.position.set(6, 5, 12); scene.add(this.fill);
 
@@ -66,6 +67,16 @@ export class Game {
     this.bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.22, 0.5, 0.98);
     this.composer.addPass(this.bloom);
     this.composer.addPass(new OutputPass());
+    this.grade = new ShaderPass({
+      uniforms: { tDiffuse: { value: null }, sat: { value: 1.14 }, contrast: { value: 1.07 }, vig: { value: 0.22 }, warm: { value: 0.025 } },
+      vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+      fragmentShader: `uniform sampler2D tDiffuse; uniform float sat, contrast, vig, warm; varying vec2 vUv;
+        void main(){ vec4 c = texture2D(tDiffuse, vUv); float l = dot(c.rgb, vec3(0.2126, 0.7152, 0.0722));
+          c.rgb = mix(vec3(l), c.rgb, sat); c.rgb = (c.rgb - 0.5) * contrast + 0.5; c.rgb += vec3(warm, warm * 0.4, -warm * 0.6);
+          vec2 q = vUv - 0.5; c.rgb *= 1.0 - vig * smoothstep(0.35, 0.95, length(q * vec2(1.1, 1.0)));
+          gl_FragColor = vec4(clamp(c.rgb, 0.0, 1.0), c.a); }`,
+    });
+    this.composer.addPass(this.grade);
 
     // textures & materials
     await new Promise((r) => setTimeout(r, 30));
@@ -74,7 +85,19 @@ export class Game {
     await new Promise((r) => setTimeout(r, 10));
     const glowTex = Tex.glowTexture();
     this.S = Models.makeSharedMaterials(glowTex, null);
-    this.tex = { glow: glowTex, laneRune: Tex.laneRuneTexture(), coin: Tex.coinTexture() };
+    this.tex = { glow: glowTex, laneRune: Tex.laneRuneTexture(), coin: Tex.coinTexture(), ...Tex.shadingTextures() };
+    // image-based lighting: a PMREM of the daytime sky gives every PBR surface believable ambient light and sheen
+    const pm = new THREE.PMREMGenerator(renderer), envScene = new THREE.Scene(), envSky = buildSky(0x5aa9ff, 0xf1f8ff);
+    envSky.material.uniforms.time.value = 3; envScene.add(envSky);
+    scene.environment = pm.fromScene(envScene, 0, 0.1, 1000).texture; scene.environmentIntensity = 0.55; pm.dispose();
+    // distant hills give the horizon some depth
+    this.hills = [];
+    for (const [rad, h, col] of [[330, 55, 0.5], [300, 38, 0.3]]) {
+      const geo = new THREE.CylinderGeometry(rad, rad, h, 72, 1, true), pos = geo.attributes.position;
+      for (let i = 0; i < pos.count; i++) if (pos.getY(i) > 0) { const a = Math.atan2(pos.getZ(i), pos.getX(i)); pos.setY(i, h / 2 * (0.25 + 0.75 * Math.abs(Math.sin(a * 3.1 + rad) * 0.6 + Math.sin(a * 7.3) * 0.4))); }
+      const hill = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: 0x9db8c8, fog: false, side: THREE.BackSide, depthWrite: true }));
+      hill.position.y = h / 2 - 6; hill.renderOrder = -5; hill.userData.mix = col; scene.add(hill); this.hills.push(hill);
+    }
     progress && progress(0.8);
 
     this.world = new World(scene, biomeMats, this.S, this.tex);
@@ -136,7 +159,7 @@ export class Game {
     const save = Store.get();
     this.dist = 0; this.speed = 0; this.baseSpeed = SPEED.start; this.slowT = 0;
     this.score = 0; this.runCoins = 0; this.banked = 0;
-    this.runTime = 0;
+    this.runTime = 0; this.boulderT = 24 + Math.random() * 14; this.boulder = null; this.rumbleT = 0; this.boulderDust = 0;
     this.stats = { distance: 0, coins: 0, jumps: 0, rolls: 0, powerups: 0, lanes: 0, climbs: 0, score: 0 };
     this.timers = { magnet: 0, double: 0, boots: 0, wings: 0, jetpack: 0 }; this.shield = false;
     this.flyWarn = false; this.revives = 0; this.shake = 0; this.notified = new Set();
@@ -287,6 +310,8 @@ export class Game {
     this.score += sp * dt * this.mult;
     this.stats.distance = this.dist; this.stats.score = this.score;
 
+    w.targetX = p.x;
+    this.updateBoulder(dt, sp);
     w.update(dt, this.dist, sp, this.time);
     this.updateFx(dt, sp);
     this.updateAtmosphere(dt);
@@ -318,6 +343,7 @@ export class Game {
       if (sd.ghost || sd.ignore) continue;
       if (p.invuln > 0 && h.kind === 'front') continue;
       if (this.shield) { this.breakShield(sd); return; }
+      if (sd.type === 'boulder') { this.die('boulder'); return; }
       const fatal = h.kind === 'front' && (sd.type === 'wall' || sd.type === 'block');
       if (fatal) { this.die('crash'); return; }
       if (h.kind === 'side') {
@@ -339,6 +365,38 @@ export class Game {
     const caught = this.chaser.alert();
     if (caught) { this.die('caught'); }
     else { Audio.sfx.roar(); this.ui.toast('The Minotaur is right behind you!', 'warn'); this.growlT = 1.5; }
+  }
+
+  /** Random, homing boulder: warns, rolls toward the player's lane, locks on late, flattens anything in its way. */
+  updateBoulder(dt, sp) {
+    const p = this.player, w = this.world;
+    this.boulderT -= dt;
+    if (this.boulderT <= 0 && !p.flying && !this.boulder && this.dist > 300 && this.state === STATE.RUNNING) {
+      const diff = clamp(this.dist / 6000, 0, 1);
+      this.boulder = w.addBoulder(p.target, this.dist + 80 + sp * 1.5, 13 + diff * 7);
+      this.boulderT = 24 + Math.random() * 20 - diff * 8;
+      this.ui.toast('⚠ BOULDER! Get out of its lane!', 'warn'); this.ui.flash('rgba(255,140,40,0.25)');
+      Audio.sfx.rumble(); this.shake = Math.max(this.shake, 0.35);
+    }
+    const b = this.boulder;
+    if (!b) return;
+    if (b.ghost && b.smashT) { this.boulder = null; return; }
+    const ahead = b.s0 - this.dist;
+    if (ahead < 80 && ahead > -3 && !b.ghost) {
+      this.rumbleT -= dt;
+      if (this.rumbleT <= 0) { Audio.sfx.rumble(); this.rumbleT = 0.45; }
+      this.shake = Math.max(this.shake, 0.1 + 0.2 * (1 - clamp(ahead / 80, 0, 1)));
+      this.boulderDust -= dt;
+      if (this.boulderDust <= 0) {
+        this.boulderDust = 0.04;
+        for (let i = 0; i < 2; i++) this.particles.emit({ x: b.x + (Math.random() - 0.5) * 1.6, y: 0.15, z: -(b.s0 - this.dist) - 0.6, vx: (Math.random() - 0.5) * 2, vy: 0.8 + Math.random(), vz: 0, life: 0.7, size: 0.5, color: this.dustColor || 0x998877, world: true, grow: 1.6 });
+      }
+    }
+    if (!b.ghost && b.s1 < this.dist - 1.5 && !b.counted) {
+      b.counted = true; this.score += 250 * this.mult;
+      this.ui.toast('Boulder dodged! +250', 'mission');
+    }
+    if (b.s1 < this.dist - 20 || b.ghost) this.boulder = null;
   }
 
   breakShield(sd) {
@@ -372,6 +430,7 @@ export class Game {
     this.speed *= Math.exp(-dt * 5);
     this.dist += this.speed * dt;
     this.player.update(dt, this.dist, this.speed, this.world);
+    this.world.targetX = this.player.x;
     this.world.update(dt, this.dist, this.speed, this.time);
     this.chaser.update(dt, 8, this.player.x);
     this.updateFx(dt, this.speed); this.updateAtmosphere(dt);
@@ -422,12 +481,12 @@ export class Game {
   collect(prevDist, dt) {
     const p = this.player, w = this.world, T = this.timers;
     const cy = p.y + (p.rollT > 0 ? 0.4 : 0.95);
-    const magnet = T.magnet > 0;
+    const magnet = T.magnet > 0 || p.flying;
     if (magnet) {
       for (const c of w.coins) {
         const ds = c.s - this.dist;
-        if (ds > -2 && ds < 22 && Math.abs(c.x - p.x) < 9) {
-          const k = damp(7, dt);
+        if (ds > -2 && ds < 22 && Math.abs(c.x - p.x) < (p.flying ? 3.4 : 9) && (!p.flying || Math.abs(c.y - cy) < 5)) {
+          const k = damp(p.flying ? 5 : 7, dt);
           c.x += (p.x - c.x) * k; c.y += (cy - c.y) * k; c.s += (this.dist + 0.2 - c.s) * k * 0.9;
         }
       }
@@ -436,7 +495,7 @@ export class Game {
     for (let i = coins.length - 1; i >= 0; i--) {
       const c = coins[i];
       if (c.s < prevDist - 0.6 || c.s > this.dist + 0.7) continue;
-      if (Math.abs(c.x - p.x) < 0.85 && Math.abs(c.y - cy) < (c.y > 3 ? 1.5 : 1.15)) {
+      if (Math.abs(c.x - p.x) < (p.flying ? 1.7 : 0.85) && Math.abs(c.y - cy) < (p.flying ? 3.6 : 1.15)) {
         coins.splice(i, 1);
         this.runCoins++; this.stats.coins = this.runCoins;
         this.score += 10 * this.mult;
@@ -510,16 +569,17 @@ export class Game {
     this.hemi.intensity = A.ambientI + (B.ambientI - A.ambientI) * t;
     this.sun.color.copy(c('sun')); this.sun.intensity = A.sunI + (B.sunI - A.sunI) * t;
     this.ambient.setColor(c('accent'));
+    for (const h of this.hills) h.material.color.copy(fog).lerp(c('skyTop'), h.userData.mix).multiplyScalar(0.93);
     this.dustColor = c('trim').offsetHSL(0, -0.1, -0.1).getHex();
     const idx = t > 0.5 ? (bi + 1) % BIOMES.length : bi % BIOMES.length;
-    if (idx !== this.biomeIdx) { this.biomeIdx = idx; this.ui.onBiome(BIOMES[idx], this.state === STATE.RUNNING && this.dist > 50); }
+    if (idx !== this.biomeIdx) { const mode = { hedge: [-0.5, 2.4, 0xb6d84a], stone: [0.12, 1.4, 0xffe3a6], crystal: [-0.35, 1.8, 0xffffff], lava: [0.55, 1.6, 0xff7a2a] }[BIOMES[idx].id]; this.ambient.setMode(mode[0], mode[1], mode[2]); this.biomeIdx = idx; this.ui.onBiome(BIOMES[idx], this.state === STATE.RUNNING && this.dist > 50); }
   }
 
   render(dt) {
     const p = this.player, cam = this.camera, st = this.state;
     const sn = clamp((this.speed - SPEED.start) / (SPEED.max - SPEED.start), 0, 1);
     this.shake = Math.max(0, this.shake - dt * 2.2);
-    let pos, look, fov = this.baseFov + sn * 9 + (p.flying ? 6 : 0);
+    let pos, look, fov = this.baseFov + sn * 9 + (p.flying ? 8 : 0);
     const tn = this.time;
     if (st === STATE.MENU || st === STATE.OVER) {
       const a = -0.6 + Math.sin(tn * 0.28) * 0.45;
@@ -530,9 +590,10 @@ export class Game {
       else if (st === STATE.MENU && this.ui.wide) { pos.x -= 1.9; look.x -= 1.9; }
       else look.y = 1.25;
     } else {
-      const cy = 3.55 + p.y * 0.4 + (p.flying ? 0.8 : 0);
-      pos = new THREE.Vector3(p.x * 0.55, cy, 6.0);
-      look = new THREE.Vector3(p.x * 0.3, 1.45 + p.y * 0.35, -10);
+      // in flight the camera rises and pitches down at the runner: the horizon moves up the screen and the coin ribbons above you stream through the sky
+      const cy = 3.55 + p.y * 0.55;
+      pos = new THREE.Vector3(p.x * 0.55, cy, 6.0 + p.y * 0.1);
+      look = new THREE.Vector3(p.x * 0.3, 1.45 + p.y * 0.22, -10);
       if (this.baseFov > 66) { pos.y += 0.9; pos.z += 1.5; }
     }
     const k = damp(st === STATE.MENU || st === STATE.OVER ? 4 : st === STATE.COUNTDOWN ? 2.2 : 9, dt);
@@ -549,6 +610,7 @@ export class Game {
     // keep the shadow frustum glued to the player
     this.moon.position.set(-110, 190, -300);
     this.sky.position.copy(cam.position);
+    for (const h of this.hills) { h.position.x = cam.position.x; h.position.z = cam.position.z; }
     this.composer.render(dt);
   }
 }
