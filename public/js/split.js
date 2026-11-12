@@ -25,7 +25,7 @@ export class OpponentView {
     this.runner = new Ghost(name, skinId, game.S, { opaque: true }); scene.add(this.runner.holder);
     this.fx = buildFx(game.renderer, scene, this.camera);
     this.dist = 0; this.speed = 15; this.realm = 0; this.time = 0; this.kaiju = null;
-    this.ctx = { time: 0, dist: 0, shake: 0, state: 'spectate', score: 0, mult: 1, stats: {}, scene, ui: { toast() {}, flash() {}, hintFor() {} } };
+    this.ctx = { time: 0, dist: 0, shake: 0, state: 'spectate', score: 0, mult: 1, stats: {}, scene, ui: { toast() {}, flash() {} } };
     this.camera.position.set(0, 3.6, 6.2); this.lookAt = new THREE.Vector3(0, 1.5, -10);
     this.world.update(0.016, 0, 15, 0);                       // build the start area so the view isn't empty before the first message
     this.applyQuality(game.cfg);

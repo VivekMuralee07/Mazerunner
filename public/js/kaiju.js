@@ -303,10 +303,9 @@ export class Kaiju {
   launch(i, ctx) {
     for (const sd of this.waves) if (sd.planIdx === i) { sd.armed = true; sd.ghost = false; }
     this.fired = i + 1; this.lastLaunch = this.t;
-    if (this.plan[i].kind === 'quake') { this.swipe = 1; this.swipeDir = i % 2 ? 1 : -1; this.audio.rumble(); ctx.shake = Math.max(ctx.shake, 0.6); ctx.ui.toast('⚠ SHOCKWAVE! Jump!', 'warn'); }
+    if (this.plan[i].kind === 'quake') { this.swipe = 1; this.swipeDir = i % 2 ? 1 : -1; this.audio.rumble(); ctx.shake = Math.max(ctx.shake, 0.6); }
     else this.audio.flame();
     this.armWaves(i + 1);
-    if (this.plan[i + 1]) ctx.ui.hintFor(this.plan[i + 1].kind);                           // teach each new kind of wave the first time it is telegraphed
   }
 
   update(dt, ctx) {
@@ -316,7 +315,7 @@ export class Kaiju {
     if (this.phase === 'rise') {
       const k = smooth(t / 1.5); this.model.position.y = -17 * SCALE * (1 - k);
       ctx.shake = Math.max(ctx.shake, 0.08 + 0.2 * (1 - k));
-      if (t >= 1.0 && !this.roared) { this.roared = true; this.audio.kaiju(); ctx.shake = Math.max(ctx.shake, 0.55); ctx.ui.toast('⚠ GODZILLA! Dodge the blue flame', 'warn'); ctx.ui.flash('rgba(70,140,255,0.28)'); ctx.ui.hintFor(this.plan[0].kind); }
+      if (t >= 1.0 && !this.roared) { this.roared = true; this.audio.kaiju(); ctx.shake = Math.max(ctx.shake, 0.55); ctx.ui.flash('rgba(70,140,255,0.28)'); }
       if (t >= 1.5) this.phase = 'charge';
     } else if (this.phase === 'charge') { if (t >= LAUNCH0) { this.phase = 'breathe'; this.launch(0, ctx); } }
     else if (this.phase === 'breathe') {
@@ -360,7 +359,7 @@ export class Kaiju {
       animateFlameWave(sd.group, time, sd.armed && !sd.smashT, sd.s0 - dist);
     }
     if (this.fired >= N && !this.survived && ctx.state === 'running' && !this.waves.some((x) => x.armed && x.s1 > dist - 1)) {
-      this.survived = true; ctx.score += 400 * ctx.mult; ctx.stats.kaiju = (ctx.stats.kaiju | 0) + 1; ctx.ui.toast('Godzilla dodged! +400', 'mission');
+      this.survived = true; ctx.score += 400 * ctx.mult; ctx.stats.kaiju = (ctx.stats.kaiju | 0) + 1;
     }
     if (moving && this.s - dist < 150) { const s2 = Math.sin(this.stride); if (s2 > 0.97 && !this.thud) { this.thud = true; this.audio.rumble(); ctx.shake = Math.max(ctx.shake, 0.18); } if (s2 < 0.5) this.thud = false; }
     if (this.phase === 'leave' && (this.s - dist > 190 || this.turnT > 6 || this.s > leg.b - 10)) this.dispose();

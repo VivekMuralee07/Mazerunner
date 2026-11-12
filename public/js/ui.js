@@ -23,7 +23,6 @@ export class UI {
     this.game = game;
     const click = (sel, fn) => $(sel).addEventListener('click', (e) => { Audio.sfx.click(); fn(e); });
     click('#btnPlay', () => this.game.play());
-    click('#setHints', () => { Store.get().settings.hints = {}; Store.save(); this.setMsg('Hints will show again the next time each hazard appears.', true); });
     click('#btnMore', () => this.openPanel('more'));
     click('#btnShop', () => this.openPanel('shop'));
     click('#btnMissions', () => this.openPanel('missionsScreen'));
@@ -259,23 +258,7 @@ export class UI {
     const t = document.createElement('div'); t.className = `toast ${kind}`; t.textContent = text; if (color) t.style.setProperty('--c', color);
     t.style.animationDuration = `${ms}ms`; box.appendChild(t); setTimeout(() => t.remove(), ms);
   }
-  /** One-time teaching card for a new hazard. Remembered in the save so it only appears the first time (Settings can reset it). */
-  hint(key, icon, title, text, ms = 5200) {
-    const s = Store.get().settings; s.hints = s.hints || {};
-    if (s.hints[key]) return false;
-    s.hints[key] = 1; Store.save();
-    const el = $('#hintCard'); el.innerHTML = '';
-    const i = document.createElement('span'); i.className = 'hi'; i.textContent = icon;
-    const d = document.createElement('div'); const b = document.createElement('b'); b.textContent = title; const p = document.createElement('p'); p.textContent = text; d.append(b, p);
-    el.append(i, d); el.classList.remove('hidden'); el.style.animation = 'none'; void el.offsetWidth; el.style.animation = `hintIn ${ms}ms ease both`;
-    clearTimeout(this.hintT); this.hintT = setTimeout(() => el.classList.add('hidden'), ms);
-    return true;
-  }
-  hintFor(kind) {
-    if (kind === 'quake') this.hint('kaijuQuake', '💥', 'Shockwave!', 'His tail sweeps across every lane. Look for the orange ↑ arrows on the floor and JUMP.');
-    else this.hint('kaijuFire', '🔥', 'Godzilla!', 'He breathes blue fire. Lanes with blue arrows will burn: switch to the clear lane, or jump the low flames.');
-  }
-  clearToasts() { clearTimeout(this.hintT); $('#hintCard').classList.add('hidden'); $('#toasts').innerHTML = ''; for (const [, e] of this.puEls) e.el.remove(); this.puEls.clear(); }
+  clearToasts() { $('#toasts').innerHTML = ''; for (const [, e] of this.puEls) e.el.remove(); this.puEls.clear(); }
 
   // ------------------------------------------------------------------ play together
   lobbyError(msg) { $('#lobbyError').textContent = msg || ''; }
