@@ -23,6 +23,7 @@ export class UI {
     this.game = game;
     const click = (sel, fn) => $(sel).addEventListener('click', (e) => { Audio.sfx.click(); fn(e); });
     click('#btnPlay', () => this.game.play());
+    click('#btnMore', () => this.openPanel('more'));
     click('#btnShop', () => this.openPanel('shop'));
     click('#btnMissions', () => this.openPanel('missionsScreen'));
     click('#btnSettings', () => this.openPanel('settings'));
@@ -110,17 +111,17 @@ export class UI {
   }
 
   showMenu() { this.hud(false); $('#oppHud').classList.add('hidden'); this.hide('gameover'); this.hide('pause'); this.hide('lobby'); this.hide('coopOver'); this.closePanels(); this.refreshMenu(); this.show('menu'); }
-  onPlay() { this.hide('menu'); this.hide('lobby'); this.hide('daily'); this.hide('coopOver'); this.closePanels(); this.hide('gameover'); this.hud(true); const co = this.game.coop && this.game.coop.active; $('#coopHud').classList.toggle('hidden', !co); $('#oppHud').classList.toggle('hidden', !co); $('#btnPause').classList.toggle('hidden', !!co); this.showDown(false); $('#tutorial').classList.add('hidden'); this.clearToasts(); this.updateHud(this.game, true); }
+  onPlay() { this.hide('menu'); this.hide('lobby'); this.hide('daily'); this.hide('more'); this.hide('coopOver'); this.closePanels(); this.hide('gameover'); this.hud(true); const co = this.game.coop && this.game.coop.active; $('#coopHud').classList.toggle('hidden', !co); $('#oppHud').classList.toggle('hidden', !co); $('#btnPause').classList.toggle('hidden', !!co); this.showDown(false); $('#tutorial').classList.add('hidden'); this.clearToasts(); this.updateHud(this.game, true); }
   onRevive() { this.hide('gameover'); this.hud(true); }
   showPause(on) { on ? this.show('pause') : this.hide('pause'); }
 
   openPanel(id) {
-    this.hide('menu'); this.show(id);
+    this.hide('menu'); if (id !== 'more') this.hide('more'); this.show(id);
     if (id === 'shop') this.renderShop(); if (id === 'missionsScreen') this.renderMissions(); if (id === 'settings') this.renderSettings(); if (id === 'board') this.renderBoard(); if (id === 'daily') this.renderDaily();
   }
   closePanels() {
-    const was = ['shop', 'missionsScreen', 'settings', 'board', 'lobby', 'daily'].some((id) => $('#' + id).classList.contains('show'));
-    ['shop', 'missionsScreen', 'settings', 'board', 'lobby', 'daily'].forEach((id) => this.hide(id));
+    const was = ['shop', 'missionsScreen', 'settings', 'board', 'lobby', 'daily', 'more'].some((id) => $('#' + id).classList.contains('show'));
+    ['shop', 'missionsScreen', 'settings', 'board', 'lobby', 'daily', 'more'].forEach((id) => this.hide(id));
     if (was) { this.show('menu'); this.refreshMenu(); }
   }
 

@@ -109,6 +109,7 @@ try {
     };
   });
 
+  const openMore = async (pg) => { await pg.click('#btnMore'); await pg.waitForSelector('#more.show', { timeout: 30000 }); };
   console.log('Core rules');
   let r = await page.evaluate(() => {
     const g = window.__game, T = window.T; T.start();
@@ -229,7 +230,11 @@ try {
   // UI flows through real clicks
   await page.evaluate(() => { const g = window.__game; g.state = 'menu'; g.resetRun(); g.ui.showMenu(); const s = JSON.parse(localStorage.getItem('labyrinth-run-save-v1')); });
   await page.evaluate(() => { const Store = null; });
-  await page.click('#btnShop');
+  check('the main page is clean: just PLAY and a Menu button', (await page.locator('#menu .btn:visible').count()) === 2 && await page.isVisible('#btnPlay') && await page.isVisible('#btnMore'));
+  await page.click('#btnMore'); await page.waitForSelector('#more.show', { timeout: 30000 });
+  check('every other option lives inside the Menu', !(await page.isVisible('#menu')) && (await page.locator('#more .btn:visible').count()) === 7 && await page.isVisible('#btnTogether') && await page.isVisible('#btnDaily') && await page.isVisible('#btnShop') && await page.isVisible('#btnMissions') && await page.isVisible('#btnBoard') && await page.isVisible('#btnSettings'));
+  await page.click('#more .back'); await page.waitForSelector('#menu.show', { timeout: 30000 });
+  await openMore(page); await page.click('#btnShop');
   check('shop opens', await page.isVisible('#shop'));
   await page.evaluate(() => { const s = JSON.parse(localStorage.getItem('labyrinth-run-save-v1')); s.coins = 5000; localStorage.setItem('labyrinth-run-save-v1', JSON.stringify(s)); });
   r = await page.evaluate(async () => { const m = await import('/js/storage.js'); m.load(); return m.get().coins; });
@@ -245,11 +250,11 @@ try {
   check('buying a Magnet upgrade works', r.lvl === 1 && r.coins === 4400, JSON.stringify(r));
   if (SHOTS) { await page.screenshot({ path: path.join(ROOT, 'screenshots/shop.png') }); }
   await page.click('#shop .back');
-  await page.click('#btnMissions');
+  await openMore(page); await page.click('#btnMissions');
   check('missions screen lists three missions', (await page.locator('#missionList .mission').count()) === 3);
   if (SHOTS) { await page.screenshot({ path: path.join(ROOT, 'screenshots/missions.png') }); }
   await page.click('#missionsScreen .back');
-  await page.click('#btnSettings');
+  await openMore(page); await page.click('#btnSettings');
   await page.click('#setMusic');
   r = await page.evaluate(async () => { const m = await import('/js/storage.js'); return m.get().settings.music; });
   check('settings toggles persist', r === false);
@@ -301,7 +306,7 @@ try {
   check('the daily challenge is the same maze for everyone today (and normal play clears the daily flag)', r.d1 === new Date().toISOString().slice(0, 10).replace(/-/g, '') && r.same && r.c === null, JSON.stringify(r));
   check('the daily seed comes from the date only', r.seedA === r.seedB && r.seedA !== r.seedC && r.seedA > 0);
   await page.evaluate(() => { const g = window.__game; g.state = 'menu'; g.quitToMenu(); });
-  await page.click('#btnDaily'); await page.waitForSelector('#daily.show', { timeout: 30000 });
+  await openMore(page); await page.click('#btnDaily'); await page.waitForSelector('#daily.show', { timeout: 30000 });
   check('the daily panel opens from the menu with a play button', await page.isVisible('#dailyPlay') && (await page.textContent('#dailyInfo')).includes('same maze'));
   await page.click('#dailyPlay'); await page.waitForFunction(() => window.__game.state === 'countdown' || window.__game.state === 'running', null, { timeout: 30000 });
   check('starting the daily challenge from its panel hides the menu and the panel (nothing overlaps the game)', !(await page.isVisible('#menu')) && !(await page.isVisible('#daily')) && await page.isVisible('#hud') && await page.evaluate(() => !!window.__game.daily));
@@ -495,12 +500,12 @@ try {
   check('IndexedDB mirror restores a save that localStorage lost', r.restored && r.best > 0, JSON.stringify(r));
 
   await page.evaluate(() => { const g = window.__game; g.state = 'menu'; g.resetRun(); g.ui.showMenu(); });
-  await page.click('#btnBoard');
+  await openMore(page); await page.click('#btnBoard');
   await page.waitForFunction(() => document.querySelectorAll('#boardList li').length > 0, null, { timeout: 8000 });
   check('leaderboard screen lists players and highlights you', (await page.locator('#boardList li.me').count()) === 1 && (await page.locator('#boardStats div').count()) === 9);
   if (SHOTS) await page.screenshot({ path: path.join(ROOT, 'screenshots/leaderboard.png') });
   await page.click('#board .back');
-  await page.click('#btnSettings');
+  await openMore(page); await page.click('#btnSettings');
   await page.fill('#setName', 'Maze Master'); await page.dispatchEvent('#setName', 'change');
   r = await page.evaluate(async () => { const m = await import('/js/storage.js'); return m.get().settings.name; });
   check('nickname is saved', r === 'Maze Master');
@@ -610,10 +615,10 @@ try {
       await pg.waitForSelector('#loading', { state: 'hidden', timeout: 180000 }); return pg;
     };
     const A = await mkp('Ada'), B = await mkp('Bo');
-    await A.click('#btnTogether'); await A.waitForSelector('#lobby.show'); await A.click('#lobbyCreate');
+    await openMore(A); await A.click('#btnTogether'); await A.waitForSelector('#lobby.show'); await A.click('#lobbyCreate');
     await A.waitForFunction(() => document.getElementById('lobbyBigCode').textContent.length === 4 && !document.getElementById('lobbyWait').classList.contains('hidden'));
     const code = await A.textContent('#lobbyBigCode'); check('the host sees a 4-letter room code', /^[A-Z0-9]{4}$/.test(code), code);
-    await B.click('#btnTogether'); await B.waitForSelector('#lobby.show'); await B.fill('#lobbyCode', code.toLowerCase()); await B.click('#lobbyJoin');
+    await openMore(B); await B.click('#btnTogether'); await B.waitForSelector('#lobby.show'); await B.fill('#lobbyCode', code.toLowerCase()); await B.click('#lobbyJoin');
     await B.waitForFunction(() => !document.getElementById('lobbyWait').classList.contains('hidden'));
     await A.waitForFunction(() => !document.getElementById('lobbyStart').classList.contains('hidden'));
     check('both lobbies show both players; only the host gets the Start button', (await A.textContent('#lobbyPlayers')).includes('Bo') && (await B.textContent('#lobbyPlayers')).includes('Ada') && await B.locator('#lobbyStart').isHidden());
