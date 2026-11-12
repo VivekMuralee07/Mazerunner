@@ -377,7 +377,7 @@ export class World {
   addSolid(type, lane, s0, opts = {}) {
     const BMm = this.BM[biomeAt(s0).id], S = this.S;
     let group, len, H = 0, ramp = 0;
-    if (type === 'low') { group = M.buildLow(BMm, S); len = 0.9; H = 0.9; }
+    if (type === 'low') { group = M.buildLow(BMm, S); len = 0.9; H = 0.62; }
     else if (type === 'high') { group = M.buildHigh(BMm, S); len = 0.8; }
     else if (type === 'wall') { group = M.buildWall(BMm, S); len = 1.1; H = WALL_H; }
     else { ramp = opts.ramp ? RAMP_LEN : 0; len = ramp + opts.body; H = BLOCK_H; group = M.buildBlock(BMm, S, H, len, ramp); }
