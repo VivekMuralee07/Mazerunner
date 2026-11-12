@@ -2,7 +2,7 @@
 //  * App code (HTML / JS / CSS / manifest): NETWORK FIRST, so the page and its scripts are always the same version.
 //    If the network is slow (>4 s) or offline, the last cached copy is used.
 //  * Vendor libraries and icons: stale-while-revalidate (they only change with a new deploy).
-const CACHE = 'labyrinth-run-v10';
+const CACHE = 'labyrinth-run-v11';
 const SHELL = [
   '/', '/index.html', '/css/style.css', '/manifest.webmanifest',
   '/js/main.js', '/js/game.js', '/js/world.js', '/js/track.js', '/js/player.js', '/js/chaser.js', '/js/models.js', '/js/textures.js',
@@ -13,7 +13,7 @@ const SHELL = [
   '/vendor/three/addons/postprocessing/ShaderPass.js', '/vendor/three/addons/postprocessing/Pass.js',
   '/vendor/three/addons/postprocessing/MaskPass.js', '/vendor/three/addons/shaders/CopyShader.js',
   '/vendor/three/addons/shaders/LuminosityHighPassShader.js', '/vendor/three/addons/shaders/OutputShader.js',
-  '/icons/icon-192.png', '/icons/icon-512.png',
+  '/icons/icon-192.png', '/icons/icon-512.png', '/audio/godzilla-roar.mp3',
 ];
 
 self.addEventListener('install', (e) => {

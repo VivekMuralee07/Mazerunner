@@ -348,6 +348,33 @@ try {
     return { bad, kinds: [...kinds], junk: decodePlan(['x']) === null && decodePlan('f') === null && decodePlan(['f9']) === null && decodePlan([]) === null && decodePlan(['q', 'q', 'q', 'q', 'q']) === null };
   });
   check('attack patterns are always dodgeable (a free lane within one step), mix fire and shockwaves, and survive the network encoding', r.bad === 0 && r.kinds.length === 2 && r.junk, JSON.stringify(r));
+  r = await page.evaluate(async () => {
+    const St = await import('/js/storage.js'), g = window.__game, T = window.T, FX = { kaiju() {}, flame() {}, rumble() {} };
+    T.start(); g.boulderT = 1e9; g.kaijuT = 1e9; g.player.invuln = 9999; St.get().settings.hints = {};
+    g.kaiju.spawn(g.dist + 170, [{ kind: 'fire', lanes: [0, 2] }, { kind: 'quake', lanes: [0, 1, 2] }], FX);
+    for (let i = 0; i < 60 * 1.3; i++) g.step(1 / 60);
+    const card = document.getElementById('hintCard'), first = { shown: !card.classList.contains('hidden'), text: card.textContent };
+    for (let i = 0; i < 60 * 2.2; i++) g.step(1 / 60);                                              // wave 1 launches at 3.0 s and the shockwave is telegraphed
+    const second = { shown: !card.classList.contains('hidden'), text: card.textContent }, saved = { ...St.get().settings.hints };
+    g.kaiju.dispose(); card.classList.add('hidden');
+    g.kaiju.spawn(g.dist + 170, [{ kind: 'fire', lanes: [0, 2] }], FX); for (let i = 0; i < 60 * 1.3; i++) g.step(1 / 60);
+    const again = !card.classList.contains('hidden'); g.kaiju.dispose();
+    return { first, second, saved, again };
+  });
+  check('the first Godzilla fire wave shows a one-time hint (clear lane / jump the flames)', r.first.shown && /blue/i.test(r.first.text) && /jump/i.test(r.first.text), JSON.stringify(r.first));
+  check('the shockwave hint appears the first time it is telegraphed (jump!)', r.second.shown && /JUMP/.test(r.second.text) && r.saved.kaijuQuake === 1, JSON.stringify(r.second));
+  check('hints are remembered: they do not show a second time', r.again === false && r.saved.kaijuFire === 1, JSON.stringify(r));
+  r = await page.evaluate(async () => { const x = await fetch('/audio/godzilla-roar.mp3'); const b = await x.arrayBuffer(); return { ok: x.ok, type: x.headers.get('content-type'), bytes: b.byteLength }; });
+  check('the recorded Godzilla roar is served as audio', r.ok && r.type === 'audio/mpeg' && r.bytes > 50000, JSON.stringify(r));
+  r = await page.evaluate(() => {
+    const g = window.__game, T = window.T; T.start(); g.boulderT = 1e9;
+    const sd = T.add('block', 1, 30, { ramp: false, body: 12 }); let jumped = false, minGap = 99;
+    T.until(() => g.state === 'dying' || (jumped && g.player.y > 1.2), 10, () => { const gap = sd.s0 - g.dist; if (!jumped && gap < g.speed * 0.09) { g.action('jump'); jumped = true; minGap = gap; } });
+    T.run(0.4); return { st: g.state, y: +g.player.y.toFixed(2), jumped, gap: +minGap.toFixed(2) };
+  });
+  check('a slightly late jump still lands on a teal slab instead of ending the run', r.st === 'running' && r.jumped && r.y > 1.2, JSON.stringify(r));
+  r = await page.evaluate(() => { const g = window.__game, T = window.T; T.start(); g.boulderT = 1e9; T.add('block', 1, 20, { ramp: false, body: 12 }); T.until(() => g.state === 'dying', 8); return { st: g.state, cause: g.cause }; });
+  check('but running straight into a slab without jumping is still fatal', r.st === 'dying', JSON.stringify(r));
   r = await page.evaluate(`(() => { const g = window.__game, T = window.T; T.start(); g.boulderT = 1e9; g.kaijuT = 0; g.player.invuln = 9999; g.autoTurn = true; let on = false, at = 0, n = 0; while (n++ < 60 * 150 && g.state === 'running') { g.step(1 / 60); for (const o of g.world.solids) if (!o.isCornerWall && o.type !== 'flame') o.ghost = true; if (g.kaiju.live) { on = true; at = g.dist; break; } } const gap = g.kaiju.live ? g.kaiju.s - g.dist : 0; g.kaiju.dispose(); return { on, at: Math.round(at), gap: Math.round(gap) }; })()`);
   check('Godzilla turns up on its own (after 400 m, on a long straight) well ahead of you', r.on && r.at > 400 && r.gap > 100, JSON.stringify(r));
   r = await page.evaluate(() => {

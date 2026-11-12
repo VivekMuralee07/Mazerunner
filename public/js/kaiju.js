@@ -306,6 +306,7 @@ export class Kaiju {
     if (this.plan[i].kind === 'quake') { this.swipe = 1; this.swipeDir = i % 2 ? 1 : -1; this.audio.rumble(); ctx.shake = Math.max(ctx.shake, 0.6); ctx.ui.toast('⚠ SHOCKWAVE! Jump!', 'warn'); }
     else this.audio.flame();
     this.armWaves(i + 1);
+    if (this.plan[i + 1]) ctx.ui.hintFor(this.plan[i + 1].kind);                           // teach each new kind of wave the first time it is telegraphed
   }
 
   update(dt, ctx) {
@@ -315,7 +316,7 @@ export class Kaiju {
     if (this.phase === 'rise') {
       const k = smooth(t / 1.5); this.model.position.y = -17 * SCALE * (1 - k);
       ctx.shake = Math.max(ctx.shake, 0.08 + 0.2 * (1 - k));
-      if (t >= 1.0 && !this.roared) { this.roared = true; this.audio.kaiju(); ctx.shake = Math.max(ctx.shake, 0.55); ctx.ui.toast('⚠ GODZILLA! Dodge the blue flame', 'warn'); ctx.ui.flash('rgba(70,140,255,0.28)'); }
+      if (t >= 1.0 && !this.roared) { this.roared = true; this.audio.kaiju(); ctx.shake = Math.max(ctx.shake, 0.55); ctx.ui.toast('⚠ GODZILLA! Dodge the blue flame', 'warn'); ctx.ui.flash('rgba(70,140,255,0.28)'); ctx.ui.hintFor(this.plan[0].kind); }
       if (t >= 1.5) this.phase = 'charge';
     } else if (this.phase === 'charge') { if (t >= LAUNCH0) { this.phase = 'breathe'; this.launch(0, ctx); } }
     else if (this.phase === 'breathe') {

@@ -19,6 +19,7 @@ export const PLAYER = {
   laneSpeed: 30,
   rollTime: 0.62,
   stepUp: 0.42,   // how much a surface may rise in one go before it counts as a wall
+  slabStep: 0.8,  // teal slabs are more forgiving: a slightly late jump still lands on top (the player is 0.65 m up by then)
 };
 
 export const SPEED = {

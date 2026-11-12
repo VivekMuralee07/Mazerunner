@@ -1,7 +1,8 @@
-// Fully synthesised audio (no asset files): SFX + a procedural driving score.
+// Audio: synthesised SFX and a procedural driving score, plus one recorded sample (Godzilla's roar) with a synth fallback.
 import * as Store from './storage.js';
 
 let ctx = null, master, sfxGain, musicGain, noiseBuf;
+let roarBuf = null, roarLoading = false;
 let musicTimer = null, step = 0, nextTime = 0, tempo = 118, intensity = 0;
 
 function ensure() {
@@ -24,6 +25,14 @@ function ensure() {
 export function unlock() {
   if (!ensure()) return;
   if (ctx.state === 'suspended') ctx.resume();
+  loadRoar();
+}
+
+/** Decode the recorded roar once (the synthesised roar plays if it is not available). */
+async function loadRoar() {
+  if (roarBuf || roarLoading || !ctx) return;
+  roarLoading = true;
+  try { const r = await fetch('/audio/godzilla-roar.mp3'); roarBuf = await ctx.decodeAudioData(await r.arrayBuffer()); } catch { roarLoading = false; }
 }
 
 export function applySettings() {
@@ -119,7 +128,12 @@ export const sfx = {
   },
   turn() { noise(0.35, { vol: 0.2, freq: 900, sweep: -600, q: 0.8 }); tone(330, 0.2, { type: 'triangle', vol: 0.12, slide: 220 }); },
   rumble() { noise(0.55, { vol: 0.5, freq: 160, sweep: -60, q: 0.7, type: 'lowpass' }); tone(48, 0.5, { type: 'sine', vol: 0.35, slide: -10 }); },
-  kaiju() {                                           // a long, layered, descending roar with a tremolo
+  kaiju() {                                           // the recorded roar, with a low synthesised rumble underneath
+    if (roarBuf && ctx) {
+      const src = ctx.createBufferSource(), g = ctx.createGain(); src.buffer = roarBuf; g.gain.value = 1.0; src.connect(g); g.connect(sfxGain); src.start();
+      tone(48, 1.8, { type: 'sine', vol: 0.3, attack: 0.15 }); noise(1.6, { vol: 0.18, freq: 140, type: 'lowpass', sweep: -40 });
+      return;
+    }
     tone(62, 2.2, { type: 'sawtooth', vol: 0.34, slide: -22, attack: 0.25 }); tone(93, 2.0, { type: 'sawtooth', vol: 0.2, slide: -45, attack: 0.3 });
     tone(310, 1.6, { type: 'square', vol: 0.07, slide: -160, attack: 0.2, delay: 0.1 });
     noise(2.0, { vol: 0.3, freq: 700, sweep: -450, q: 1.6, delay: 0.05 }); noise(2.2, { vol: 0.35, freq: 140, type: 'lowpass', sweep: -40 });
