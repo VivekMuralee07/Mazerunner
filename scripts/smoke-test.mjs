@@ -303,7 +303,11 @@ try {
   await page.evaluate(() => { const g = window.__game; g.state = 'menu'; g.quitToMenu(); });
   await page.click('#btnDaily'); await page.waitForSelector('#daily.show', { timeout: 30000 });
   check('the daily panel opens from the menu with a play button', await page.isVisible('#dailyPlay') && (await page.textContent('#dailyInfo')).includes('same maze'));
-  await page.evaluate(() => { document.querySelector('#daily .back').click(); });
+  await page.click('#dailyPlay'); await page.waitForFunction(() => window.__game.state === 'countdown' || window.__game.state === 'running', null, { timeout: 30000 });
+  check('starting the daily challenge from its panel hides the menu and the panel (nothing overlaps the game)', !(await page.isVisible('#menu')) && !(await page.isVisible('#daily')) && await page.isVisible('#hud') && await page.evaluate(() => !!window.__game.daily));
+  await page.evaluate(() => { const g = window.__game; g.quitToMenu(); });
+  r = await page.evaluate(() => { const g = window.__game, T = window.T; T.start(); const sd = T.add('low', 1, 30); return { H: sd.H, top: Math.max(...sd.group.children.map((c) => { c.geometry.computeBoundingBox(); return c.position.y + c.geometry.boundingBox.max.y; })) }; });
+  check('barricades are low (hitbox and models well under a metre)', r.H <= 0.7 && r.top <= 0.8, JSON.stringify(r));
 
   console.log('Godzilla (blue flame)');
   const KZ = "const g = window.__game, T = window.T; T.start(); g.boulderT = 1e9; g.kaijuT = 1e9; const FX = { kaiju() {}, flame() {}, rumble() {} }, F = (...l) => ({ kind: 'fire', lanes: l }), Q = { kind: 'quake', lanes: [0, 1, 2] };";

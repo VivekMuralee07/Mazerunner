@@ -120,11 +120,11 @@ export function makeSharedMaterials(glowTex, runeTex) {
 // Each builder returns a Group whose origin is the FRONT-CENTRE on the floor; it extends toward -z.
 
 export function buildLow(biomeMats, S) {
-  const g = new THREE.Group();
-  g.add(mesh(boxGeo(2.0, 0.62, 0.8, 1), S.stripeYB, 0, 0.31, -0.4, true, true));
-  g.add(mesh(boxGeo(2.12, 0.14, 0.92), S.hazard, 0, 0.66, -0.4, false));
-  for (let i = 0; i < 5; i++) g.add(mesh(coneGeo(0.11, 0.38, 6), S.spikeRed, -0.8 + i * 0.4, 0.86, -0.4));
-  for (const sx of [-1, 1]) g.add(mesh(boxGeo(0.3, 0.95, 0.95), S.orange, sx * 1.0, 0.475, -0.4));
+  const g = new THREE.Group();                                         // a low spiked barricade: easy to hop, and it no longer hides the lane behind it
+  g.add(mesh(boxGeo(2.0, 0.4, 0.8, 1), S.stripeYB, 0, 0.2, -0.4, true, true));
+  g.add(mesh(boxGeo(2.12, 0.1, 0.92), S.hazard, 0, 0.44, -0.4, false));
+  for (let i = 0; i < 5; i++) g.add(mesh(coneGeo(0.1, 0.26, 6), S.spikeRed, -0.8 + i * 0.4, 0.62, -0.4));
+  for (const sx of [-1, 1]) g.add(mesh(boxGeo(0.3, 0.64, 0.95), S.orange, sx * 1.0, 0.32, -0.4));
   return g;
 }
 
