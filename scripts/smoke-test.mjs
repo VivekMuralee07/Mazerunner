@@ -380,7 +380,7 @@ try {
     return { landmarks: lm.length, spacing: lm.length > 1 ? Math.round((lm[lm.length - 1] - lm[0]) / (lm.length - 1)) : 0 };
   });
   check('a big biome gateway spans the corridor every ~170 m', r.landmarks >= 12 && r.spacing >= 150 && r.spacing <= 200, JSON.stringify(r));
-  check('the turn hint is just an arrow (no "swipe" text)', (await page.locator('#turnHint small').count()) === 0 && !/swipe/i.test(await page.textContent('#turnHint')));
+  check('there is no on-screen "swipe to turn" message at all', (await page.locator('#turnHint').count()) === 0 && !/swipe to turn/i.test(await page.evaluate(() => document.body.innerText)));
   r = await page.evaluate(() => {
     const g = window.__game, gl = g.renderer.getContext(), out = {};
     for (const q of ['high', 'medium', 'low']) { g.applyQuality(q); g.composer.render(0.016); out[q] = gl.getError(); }
@@ -463,6 +463,19 @@ try {
   check('10 minutes of bot play (turning every corner) never hit an impossible pattern', r.st === 'running' && r.t >= 600, JSON.stringify(r));
   check('all eight biomes were visited', r.biomes.length === 8, `visited ${r.biomes.length}`);
   check('speed ramps up to the cap', r.speed >= 35);
+  console.log('Cache consistency (the "mixed old HUD + new scripts" bug)');
+  const sw = await browser.newContext({ viewport: { width: 800, height: 450 } });
+  await sw.addInitScript(() => { if (!localStorage.getItem('labyrinth-run-save-v1')) localStorage.setItem('labyrinth-run-save-v1', JSON.stringify({ settings: { namePrompted: true, tutorialDone: true, quality: 'low' } })); });
+  const sp = await sw.newPage();
+  await sp.goto(url); await sp.waitForFunction(() => window.__game && window.__game.state === 'menu', null, { timeout: 120000 });
+  await sp.evaluate(() => navigator.serviceWorker.ready); await sp.waitForTimeout(2500);
+  await sp.evaluate(async () => { const keys = await caches.keys(); const c = await caches.open(keys[0]); await c.put('/index.html', new Response('<!doctype html><title>STALE</title><h1>old version</h1>', { headers: { 'Content-Type': 'text/html' } })); await c.put('/', new Response('<!doctype html><title>STALE</title>', { headers: { 'Content-Type': 'text/html' } })); });
+  await sp.reload(); await sp.waitForFunction(() => window.__game && window.__game.state === 'menu', null, { timeout: 120000 });
+  check('a stale cached page never wins over the server: the page and scripts stay the same version', (await sp.title()) === 'Labyrinth Run – Maze Runner' && (await sp.isVisible('#btnPlay')));
+  await sp.context().setOffline(true); await sp.reload(); await sp.waitForFunction(() => document.title.startsWith('Labyrinth'), null, { timeout: 60000 }).catch(() => {});
+  check('and the game still opens offline from the cache', (await sp.title()).startsWith('Labyrinth') || (await sp.content()).includes('btnPlay'));
+  await sw.close();
+
 } catch (e) {
   fail++; console.log('  FAIL  test run crashed:', e.message);
 }

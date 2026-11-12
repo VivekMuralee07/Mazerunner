@@ -185,10 +185,3 @@ body.wide .logo span, body.wide .logo em { margin-left: 0; }
 .coderow { display: flex; gap: 8px; align-items: center; }
 .coderow code { flex: 1; min-width: 0; padding: 0.55em 0.7em; border-radius: 10px; background: rgba(20, 60, 50, 0.08); font-size: 0.78rem; overflow: hidden; text-overflow: ellipsis; user-select: all; -webkit-user-select: all; }
 
-/* turn hint: just an arrow */
-#turnHint { position: absolute; top: 36%; left: 50%; transform: translateX(-50%); pointer-events: none; font-weight: 900; }
-#turnHint .arrow { display: inline-block; font-size: 3.4rem; line-height: 1; color: #ff7a1a; text-shadow: 0 0 0 #fff, 2px 2px 0 #fff, -2px -2px 0 #fff, 2px -2px 0 #fff, -2px 2px 0 #fff, 0 6px 14px rgba(20, 60, 90, 0.5); }
-#turnHint[data-dir="right"] .arrow { transform: scaleX(-1); }
-#turnHint.near { animation: turnPulse 0.45s ease-in-out infinite; }
-#turnHint.ok .arrow { color: var(--teal); }
-@keyframes turnPulse { 50% { transform: translateX(-50%) scale(1.18); } }
