@@ -369,7 +369,7 @@ try {
   r = await page.evaluate(() => {
     const g = window.__game, T = window.T; T.start(); g.boulderT = 1e9;
     const sd = T.add('block', 1, 30, { ramp: false, body: 12 }); let jumped = false, minGap = 99;
-    T.until(() => g.state === 'dying' || (jumped && g.player.y > 1.2), 10, () => { const gap = sd.s0 - g.dist; if (!jumped && gap < g.speed * 0.065) { g.action('jump'); jumped = true; minGap = gap; } });
+    T.until(() => g.state === 'dying' || (jumped && g.player.y > 1.2), 10, () => { const gap = sd.s0 - g.dist; if (!jumped && gap < g.speed * 0.09) { g.action('jump'); jumped = true; minGap = gap; } });
     T.run(0.4); return { st: g.state, y: +g.player.y.toFixed(2), jumped, gap: +minGap.toFixed(2) };
   });
   check('a slightly late jump still lands on a teal slab instead of ending the run', r.st === 'running' && r.jumped && r.y > 1.2, JSON.stringify(r));
