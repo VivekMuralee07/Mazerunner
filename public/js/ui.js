@@ -254,7 +254,7 @@ export class UI {
     const box = $('#lobbyPlayers'); box.innerHTML = '';
     const add = (name, tag, cls) => { const d = document.createElement('div'); if (cls) d.className = cls; const a = document.createElement('span'); a.textContent = name; d.appendChild(a); if (tag) { const t = document.createElement('span'); t.className = 'host'; t.textContent = tag; d.appendChild(t); } box.appendChild(d); };
     add(`${host ? me : (peer || 'Host')}`, 'host'); add(host ? (peer || 'Waiting for your friend…') : me, host ? '' : 'you', host && !peer ? 'wait' : '');
-    $('#lobbyStatus').textContent = co.stage === 'ready' ? (host ? 'Your buddy is here. Ready when you are!' : 'Waiting for the host to start…') : 'Share this code with your friend.';
+    $('#lobbyStatus').textContent = co.stage === 'ready' ? (host ? 'Your rival is here. Ready when you are!' : 'Waiting for the host to start…') : 'Share this code with your friend.';
     $('#lobbyStart').classList.toggle('hidden', !(host && co.stage === 'ready'));
   }
 
@@ -262,28 +262,42 @@ export class UI {
 
   coopHud(co) {
     const now = performance.now(); if (now - (this.coopHudT || 0) < 200) return; this.coopHudT = now;
-    const P = co.partner, g = co.game, name = co.ghost ? co.ghost.name : 'Buddy';
-    const rel = Math.round(P.dist - g.dist), where = P.gone ? 'left' : (!P.alive ? 'down' : (rel === 0 ? 'beside you' : `${Math.abs(rel)} m ${rel > 0 ? 'ahead' : 'behind'}`));
-    const card = $('#coopCard'); card.classList.toggle('down', !P.alive || P.gone);
-    card.innerHTML = ''; const a = document.createElement('div'); a.textContent = `👥 ${name} · ${where}`; const b = document.createElement('small'); b.textContent = `Team score ${fmt(co.teamScore())}`; card.append(a, b);
+    const P = co.partner, g = co.game, name = co.oppName(), rel = Math.round(g.dist - P.dist);
+    const bar = $('#vsBar'); bar.classList.toggle('lead', P.alive && g.player && !g.player.dead && rel > 0);
+    const state = P.gone ? 'left the match' : !P.alive ? 'is OUT' : rel === 0 ? 'level with you' : `${Math.abs(rel)} m ${rel > 0 ? 'behind' : 'ahead'}`;
+    $('#vsOpp').textContent = `${name} · ${P.alive ? fmt(P.score) : fmt(P.fin ? P.fin.score : P.score) + ' · OUT'}`;
+    $('#vsMid').textContent = g.player && g.player.dead ? 'YOU ARE OUT' : `${P.alive ? state : name + ' ' + state}`;
+    $('#vsMe').textContent = `You · ${fmt(g.score)}`;
     const box = $('#coopMissions'); if (box.children.length !== co.missions.length) { box.innerHTML = ''; for (let i = 0; i < co.missions.length; i++) { const d = document.createElement('div'); d.className = 'cm'; d.innerHTML = '<i></i><span></span>'; box.appendChild(d); } }
-    co.missions.forEach((m, i) => { const d = box.children[i]; d.classList.toggle('done', m.done); d.firstChild.style.width = `${Math.round((m.progress / m.goal) * 100)}%`; d.lastChild.textContent = `${m.done ? '✔ ' : ''}${m.text} (${fmt(m.progress)}/${fmt(m.goal)})`; });
+    co.missions.forEach((m, i) => {
+      const d = box.children[i], mine = m.owner === 'me', theirs = m.owner === 'opp';
+      d.classList.toggle('done', mine); d.classList.toggle('lost', theirs);
+      d.firstChild.style.width = `${Math.round((m.progress / m.goal) * 100)}%`;
+      d.lastChild.textContent = `${mine ? '✔ ' : theirs ? '✗ ' : ''}${m.text}${m.owner ? '' : ` (${fmt(m.progress)}/${fmt(m.goal)})`}`;
+    });
   }
 
-  showDown(on) { $('#downBanner').classList.toggle('hidden', !on); }
+  showDown(on, name = 'your rival') {
+    const b = $('#downBanner'); b.classList.toggle('hidden', !on);
+    if (on) b.querySelector('span').textContent = `Watching ${name} play on. If they crash before you would have, you still lose, so cheer them to fail.`;
+  }
 
   showCoopOver(r) {
     this.hud(false); $('#coopHud').classList.add('hidden');
-    $('#coTeam').textContent = fmt(r.team); $('#coBest').classList.toggle('hidden', !r.newBest);
+    const t = $('#coTitle'); t.textContent = r.winner === 'me' ? 'You win!' : r.winner === 'opp' ? `${r.opp.name} wins` : 'It\'s a draw';
+    t.className = r.winner === 'me' ? 'win' : r.winner === 'opp' ? 'lose' : '';
+    $('#coWhy').textContent = r.opp.gone ? `${r.opp.name} left the match.` : r.winner === 'tie' ? 'Equal time and score.' : `${r.winner === 'me' ? 'You' : r.opp.name} lasted longer: ${(r.winner === 'me' ? r.me : r.opp).t.toFixed(1)} s vs ${(r.winner === 'me' ? r.opp : r.me).t.toFixed(1)} s.`;
+    $('#coBest').classList.toggle('hidden', !r.newBest);
     const P = $('#coPlayers'); P.innerHTML = '';
-    for (const [who, d] of [['You', r.me], [r.buddy.name, r.buddy]]) {
-      const el = document.createElement('div'); const small = document.createElement('small'); small.textContent = who === 'You' ? d.name : (d.gone ? 'left early' : 'buddy');
-      const b = document.createElement('b'); b.textContent = fmt(d.score); const l = document.createElement('small'); l.textContent = `${fmt(d.dist)} m · ${fmt(d.coins)} coins`;
-      const t = document.createElement('small'); t.textContent = who; el.append(t, b, l); P.appendChild(el);
+    for (const [who, d, w] of [['You', r.me, r.winner === 'me'], [r.opp.name, r.opp, r.winner === 'opp']]) {
+      const el = document.createElement('div'); if (w) el.className = 'winner';
+      const t1 = document.createElement('small'); t1.textContent = (w ? '🏆 ' : '') + who;
+      const b = document.createElement('b'); b.textContent = fmt(d.score); const l = document.createElement('small'); l.textContent = `${fmt(d.dist)} m · ${fmt(d.coins)} coins · ${d.t.toFixed(1)} s`;
+      el.append(t1, b, l); P.appendChild(el);
     }
     const M = $('#coMissions'); M.innerHTML = '';
-    for (const m of r.missions) { const d = document.createElement('div'); d.className = 'gm' + (m.done ? ' ok' : ''); d.textContent = `${m.done ? '✔' : '✗'} ${m.text} (${fmt(m.progress)}/${fmt(m.goal)})`; M.appendChild(d); }
-    if (r.reward) { const d = document.createElement('div'); d.className = 'gm ok'; d.textContent = `Team reward: +${fmt(r.reward)} coins each`; M.appendChild(d); }
+    for (const m of r.missions) { const d = document.createElement('div'); d.className = 'gm' + (m.owner === 'me' ? ' ok' : ''); d.textContent = `${m.owner === 'me' ? '✔ you' : m.owner === 'opp' ? '✗ ' + r.opp.name : '–'}: ${m.text}`; M.appendChild(d); }
+    if (r.reward) { const d = document.createElement('div'); d.className = 'gm ok'; d.textContent = `Mission rewards: +${fmt(r.reward)} coins`; M.appendChild(d); }
     this.show('coopOver');
   }
 

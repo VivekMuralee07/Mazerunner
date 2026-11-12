@@ -197,13 +197,14 @@ body.wide .logo span, body.wide .logo em { margin-left: 0; }
 .players .wait { color: var(--dim); font-style: italic; }
 .err { color: #b3001b; font-weight: 700; min-height: 1.2em; margin: 6px 0; }
 #lobby .btn { margin-top: 6px; }
-#coopHud { position: absolute; top: calc(var(--safe-t) + 10px); left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 6px; pointer-events: none; max-width: 46vw; }
-#coopCard { padding: 0.35em 0.9em; border-radius: 14px; background: rgba(255, 255, 255, 0.92); border: 2px solid #3aa8ff; box-shadow: 0 3px 10px rgba(20, 60, 90, 0.3); font-weight: 800; font-size: 0.8rem; text-align: center; line-height: 1.25; }
-#coopCard.down { border-color: var(--red); } #coopCard small { display: block; color: var(--dim); font-weight: 700; }
-#coopMissions { display: flex; flex-direction: column; gap: 3px; width: 100%; }
+#coopHud { position: absolute; left: 0; right: 0; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; align-items: center; gap: 4px; pointer-events: none; }
+#vsBar { width: 100%; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 8px; padding: 3px calc(var(--safe-r) + 12px) 3px calc(var(--safe-l) + 12px); background: linear-gradient(90deg, rgba(20, 90, 160, 0.92), rgba(15, 30, 60, 0.95) 50%, rgba(190, 50, 40, 0.92)); border-top: 2px solid #fff; border-bottom: 2px solid #fff; color: #fff; font-weight: 800; font-size: 0.78rem; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6); }
+#vsOpp { text-align: left; } #vsMe { text-align: right; } #vsMid { font: 900 0.72rem var(--sans); letter-spacing: 0.06em; text-transform: uppercase; padding: 1px 9px; border-radius: 999px; background: rgba(255, 255, 255, 0.18); }
+#vsBar.lead #vsMid { background: rgba(255, 210, 60, 0.4); }
+#coopMissions { display: flex; flex-direction: column; gap: 3px; width: min(300px, 62vw); }
 #coopMissions .cm { padding: 3px 9px; border-radius: 10px; background: rgba(255, 255, 255, 0.86); font-size: 0.68rem; font-weight: 800; position: relative; overflow: hidden; }
 #coopMissions .cm i { position: absolute; left: 0; top: 0; bottom: 0; background: rgba(10, 168, 143, 0.28); }
-#coopMissions .cm span { position: relative; } #coopMissions .cm.done { color: #07705e; }
+#coopMissions .cm span { position: relative; } #coopMissions .cm.done { color: #07705e; } #coopMissions .cm.lost { color: #8a2a2a; text-decoration: line-through; opacity: 0.8; }
 #downBanner { position: absolute; left: 50%; top: 42%; transform: translateX(-50%); width: min(86vw, 360px); text-align: center; padding: 14px 18px; border-radius: 18px; background: rgba(255, 255, 255, 0.95); border: 3px solid var(--red); box-shadow: 0 8px 24px rgba(20, 60, 90, 0.4); display: flex; flex-direction: column; gap: 4px; animation: turnPulse 1.4s ease-in-out infinite; }
 #downBanner b { font: 900 1.6rem var(--serif); color: #b3001b; } #downBanner span { font-weight: 700; color: var(--text); font-size: 0.9rem; }
 @keyframes turnPulse { 50% { transform: translateX(-50%) scale(1.04); } }
@@ -211,7 +212,13 @@ body.wide .logo span, body.wide .logo em { margin-left: 0; }
 #coMissions .gm { margin-top: 6px; padding: 8px 12px; border-radius: 10px; border: 1px solid rgba(20, 60, 50, 0.2); font-weight: 700; font-size: 0.9rem; text-align: left; }
 #coMissions .gm.ok { border-color: var(--teal); color: #07705e; background: rgba(10, 168, 143, 0.1); }
 #coPlayers div b small { display: block; color: var(--dim); font-size: 0.6rem; }
-@media (max-width: 560px) { #coopHud { max-width: 52vw; } #coopCard { font-size: 0.7rem; } }
+body.split #hud { top: 50%; padding-top: 8px; }
+body.split .hud-tl, body.split .hud-tr { top: 34px; }
+body.split #score { font-size: clamp(1.5rem, 5vw, 2.4rem); }
+body.split #downBanner { top: 68%; }
+#coTitle.win { color: #0a8f6f; } #coTitle.lose { color: #b3001b; }
+#coPlayers div.winner { outline: 3px solid var(--gold2); background: rgba(255, 220, 90, 0.2); border-radius: 12px; }
+@media (max-width: 560px) { #vsBar { font-size: 0.68rem; } }
 
 #nitro { position: absolute; bottom: 14%; left: 50%; transform: translateX(-50%); padding: 0.5em 1.2em; font-size: 1rem; background: rgba(255, 255, 255, 0.92); color: var(--dim); border: 2px solid var(--line); box-shadow: 0 4px 12px rgba(20, 60, 90, 0.3); }
 #nitro.ready { color: #fff; background: linear-gradient(180deg, #ffb400, #ff7a00); border-color: #fff3d0; animation: nitroPulse 0.7s ease-in-out infinite; }

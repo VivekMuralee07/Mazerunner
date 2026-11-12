@@ -109,15 +109,14 @@ export const MISSION_TEMPLATES = [
 export const MAX_MULTIPLIER = 10;
 
 // ---- Co-op (two-player) team missions. Progress = your stat + your buddy's stat. key = field of the stats each phone shares.
-export const COOP_MISSIONS = [
-  { id: 'coins', key: 'c', text: (n) => `Collect ${n} coins together`, goals: [120, 200, 320] },
-  { id: 'dist', key: 'd', text: (n) => `Run ${n.toLocaleString()} m as a team`, goals: [2500, 4500, 8000] },
-  { id: 'jumps', key: 'j', text: (n) => `Jump ${n} times together`, goals: [40, 80, 140] },
-  { id: 'rolls', key: 'r', text: (n) => `Roll ${n} times together`, goals: [25, 50, 90] },
-  { id: 'boulders', key: 'b', text: (n) => `Dodge ${n} boulders together`, goals: [2, 3, 5] },
-  { id: 'power', key: 'p', text: (n) => `Grab ${n} power-ups together`, goals: [5, 9, 15] },
-  { id: 'help', key: 'h', text: () => 'Revive your buddy with a heart', goals: [1, 1, 1] },
-  { id: 'score', key: 'sc', text: (n) => `Reach a team score of ${n.toLocaleString()}`, goals: [20000, 40000, 80000] },
+export const COOP_MISSIONS = [          // versus: the first player to reach each goal claims it
+  { id: 'coins', key: 'c', text: (n) => `First to collect ${n} coins`, goals: [80, 140, 220] },
+  { id: 'dist', key: 'd', text: (n) => `First to run ${n.toLocaleString()} m`, goals: [1200, 2200, 3600] },
+  { id: 'jumps', key: 'j', text: (n) => `First to jump ${n} times`, goals: [25, 45, 70] },
+  { id: 'rolls', key: 'r', text: (n) => `First to roll ${n} times`, goals: [15, 28, 45] },
+  { id: 'boulders', key: 'b', text: (n) => `First to dodge ${n} boulders`, goals: [1, 2, 3] },
+  { id: 'power', key: 'p', text: (n) => `First to grab ${n} power-ups`, goals: [3, 5, 8] },
+  { id: 'score', key: 'sc', text: (n) => `First to score ${n.toLocaleString()}`, goals: [6000, 12000, 25000] },
 ];
-export const COOP_REWARD = 120, COOP_ALL_BONUS = 250;
+export const COOP_REWARD = 120, COOP_ALL_BONUS = 250;   // per mission claimed / for winning the match
 export const CAR = { score: 25000, repeat: 60000, time: 120, speedMul: 1.3, nitroMul: 1.45, nitroTime: 2, nitroCooldown: 5, steer: 12, halfWidth: 0.95, height: 1.4, bonusCoins: 100 };

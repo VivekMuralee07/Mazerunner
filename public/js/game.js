@@ -14,7 +14,8 @@ import * as Models from './models.js';
 import { World } from './world.js';
 import { Player } from './player.js';
 import { Chaser } from './chaser.js';
-import { Particles, Ambient, buildSky } from './fx.js';
+import { Particles, Ambient, buildSky, makeLights, makeHills } from './fx.js';
+import { buildFx, applyFxQuality } from './post.js';
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
@@ -27,7 +28,7 @@ export class Game {
     this.canvas = canvas; this.ui = ui;
     this.state = STATE.LOADING;
     this.time = 0; this.dist = 0; this.speed = 0;
-    this.coop = null; this.quality = 'high'; this.fpsAcc = 0; this.fpsN = 0; this.lowFpsT = 0;
+    this.coop = null; this.split = false; this.opp = null; this.quality = 'high'; this.fpsAcc = 0; this.fpsN = 0; this.lowFpsT = 0;
   }
 
   // ------------------------------------------------------------------ setup
@@ -48,53 +49,14 @@ export class Game {
     this.camera.position.set(0, 4.3, 7.4);
 
     // lights
-    this.hemi = new THREE.HemisphereLight(0xe6f4ff, 0xb8c79a, 1.0); scene.add(this.hemi);
-    this.sun = new THREE.DirectionalLight(0xbfe6ff, 1.5); this.sun.position.set(-9, 20, 8); this.sun.target.position.set(0, 0, -14);
-    this.sun.castShadow = true;
-    const sc = this.sun.shadow.camera; sc.left = -13; sc.right = 13; sc.top = 40; sc.bottom = -26; sc.near = 1; sc.far = 70;
-    this.sun.shadow.bias = -0.0006; this.sun.shadow.normalBias = 0.04; this.sun.shadow.radius = 3; this.sun.shadow.blurSamples = 10;
-    scene.add(this.sun, this.sun.target);
-    this.fill = new THREE.DirectionalLight(0xffe6c8, 0.3); this.fill.position.set(6, 5, 12); scene.add(this.fill);
+    const L = makeLights(scene); this.hemi = L.hemi; this.sun = L.sun; this.fill = L.fill;
 
     this.sky = buildSky(BIOMES[0].skyTop, BIOMES[0].skyBottom); scene.add(this.sky);
     this.sunDir = this.sky.material.uniforms.sunDir.value;
 
-    // composer (MSAA render target + bloom + tone mapping)
-    const rt = new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType, samples: 4 });
-    this.composer = new EffectComposer(renderer, rt);
-    this.composer.addPass(new RenderPass(scene, this.camera));
-    this.bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.07, 0.35, 1.05);
-    this.composer.addPass(this.bloom);
-    this.rays = new ShaderPass({
-      uniforms: { tDiffuse: { value: null }, sun: { value: new THREE.Vector2(0.3, 1.2) }, intensity: { value: 0.2 } },
-      vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
-      fragmentShader: `uniform sampler2D tDiffuse; uniform vec2 sun; uniform float intensity; varying vec2 vUv;
-        void main(){
-          vec4 base = texture2D(tDiffuse, vUv); vec2 dir = (sun - vUv) * (0.95 / 28.0), uv = vUv; float decay = 1.0; vec3 acc = vec3(0.0);
-          for (int i = 0; i < 28; i++) { uv += dir; vec3 s = texture2D(tDiffuse, uv).rgb; float l = dot(s, vec3(0.2126, 0.7152, 0.0722)); acc += s * smoothstep(0.8, 1.5, l) * decay; decay *= 0.94; }
-          gl_FragColor = vec4(base.rgb + acc / 28.0 * intensity * vec3(1.0, 0.94, 0.8), base.a);
-        }`,
-    });
-    this.composer.addPass(this.rays);
-    this.composer.addPass(new OutputPass());
-    this.grade = new ShaderPass({
-      uniforms: { tDiffuse: { value: null }, res: { value: new THREE.Vector2(1280, 720) }, sat: { value: 1.1 }, contrast: { value: 1.12 }, vig: { value: 0.3 }, warm: { value: 0.012 }, sharp: { value: 0.38 }, ca: { value: 0.0018 }, grain: { value: 0.013 }, time: { value: 0 } },
-      vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
-      fragmentShader: `uniform sampler2D tDiffuse; uniform vec2 res; uniform float sat, contrast, vig, warm, sharp, ca, grain, time; varying vec2 vUv;
-        void main(){
-          vec2 q = vUv - 0.5; vec2 off = q * ca * dot(q, q) * 4.0;
-          vec3 c = vec3(texture2D(tDiffuse, vUv + off).r, texture2D(tDiffuse, vUv).g, texture2D(tDiffuse, vUv - off).b);
-          vec2 px = 1.0 / res;
-          vec3 n = texture2D(tDiffuse, vUv + vec2(px.x, 0.0)).rgb + texture2D(tDiffuse, vUv - vec2(px.x, 0.0)).rgb + texture2D(tDiffuse, vUv + vec2(0.0, px.y)).rgb + texture2D(tDiffuse, vUv - vec2(0.0, px.y)).rgb;
-          c += (c - n * 0.25) * sharp;                                                       // unsharp mask: crisper texture detail
-          float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
-          c = mix(vec3(l), c, sat); c = (c - 0.5) * contrast + 0.5; c += vec3(warm, warm * 0.4, -warm * 0.6);
-          c *= 1.0 - vig * smoothstep(0.35, 0.95, length(q * vec2(1.1, 1.0)));
-          c += (fract(sin(dot(vUv * res + time, vec2(12.9898, 78.233))) * 43758.5453) - 0.5) * grain;     // fine film grain
-          gl_FragColor = vec4(clamp(c, 0.0, 1.0), 1.0);
-        }`,
-    });
-    this.composer.addPass(this.grade);
+    // post-processing for the main view (a split screen builds a second chain for the opponent's view)
+    this.fx = buildFx(renderer, scene, this.camera);
+    this.composer = this.fx.composer; this.bloom = this.fx.bloom; this.rays = this.fx.rays; this.grade = this.fx.grade;
 
     // textures & materials
     await new Promise((r) => setTimeout(r, 30));
@@ -108,16 +70,11 @@ export class Game {
     const pm = new THREE.PMREMGenerator(renderer), envScene = new THREE.Scene(), envSky = buildSky(0x5aa9ff, 0xf1f8ff);
     envSky.material.uniforms.time.value = 3; envScene.add(envSky);
     scene.environment = pm.fromScene(envScene, 0, 0.1, 1000).texture; scene.environmentIntensity = 0.38; pm.dispose();
-    // distant hills give the horizon some depth
-    this.hills = [];
-    for (const [rad, h, col] of [[330, 55, 0.5], [300, 38, 0.3]]) {
-      const geo = new THREE.CylinderGeometry(rad, rad, h, 72, 1, true), pos = geo.attributes.position;
-      for (let i = 0; i < pos.count; i++) if (pos.getY(i) > 0) { const a = Math.atan2(pos.getZ(i), pos.getX(i)); pos.setY(i, h / 2 * (0.25 + 0.75 * Math.abs(Math.sin(a * 3.1 + rad) * 0.6 + Math.sin(a * 7.3) * 0.4))); }
-      const hill = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: 0x9db8c8, fog: false, side: THREE.BackSide, depthWrite: true }));
-      hill.position.y = h / 2 - 6; hill.renderOrder = -5; hill.userData.mix = col; scene.add(hill); this.hills.push(hill);
-    }
+    this.hills = makeHills(scene);
+    this.stage = { scene, sky: this.sky, hemi: this.hemi, sun: this.sun, hills: this.hills };
     progress && progress(0.8);
 
+    this.biomeMats = biomeMats;
     this.world = new World(scene, biomeMats, this.S, this.tex);
     this.player = new Player(scene, SKINS.find((s) => s.id === save.skin), this.S);
     this.chaser = new Chaser(scene);
@@ -155,22 +112,34 @@ export class Game {
       this.sun.shadow.mapSize.set(cfg.shadow, cfg.shadow);
       if (this.sun.shadow.map) { this.sun.shadow.map.dispose(); this.sun.shadow.map = null; }
     }
-    this.bloom.enabled = cfg.bloom; this.rays.enabled = cfg.rays;
-    for (const t of [this.composer.renderTarget1, this.composer.renderTarget2]) { t.samples = cfg.samples; t.dispose(); }
+    applyFxQuality(this.fx, this.split ? { ...cfg, rays: false } : cfg);
+    if (this.opp) this.opp.applyQuality(cfg);
     this.resize();
   }
 
   resize() {
-    const w = innerWidth, h = innerHeight;
-    this.renderer.setSize(w, h, false);
-    this.composer.setPixelRatio(this.cfg.pr); this.composer.setSize(w, h);
-    this.camera.aspect = w / h;
-    // narrow portrait screens need a wider vertical FOV to keep all three lanes in view
-    this.baseFov = w / h < 0.8 ? 80 : w / h < 1.2 ? 70 : 62;
+    const w = innerWidth, h = innerHeight, split = this.split, hh = split ? Math.floor(h / 2) : h;
+    const pr = split ? Math.min(this.cfg.pr, 1.5) : this.cfg.pr;                  // two views on one screen: keep the pixel count in check
+    this.renderer.setPixelRatio(pr); this.renderer.setSize(w, h, false);
+    this.composer.setPixelRatio(pr); this.composer.setSize(w, hh);
+    const aspect = w / hh;
+    this.camera.aspect = aspect;
+    // narrow portrait screens need a wider vertical FOV to keep all three lanes in view; split strips are fitted to a ~80 degree horizontal FOV
+    this.baseFov = split ? clamp((2 * Math.atan(Math.tan(0.7) / aspect) * 180) / Math.PI, 42, 78) : aspect < 0.8 ? 80 : aspect < 1.2 ? 70 : 62;
     this.camera.updateProjectionMatrix();
-    const bufH = h * this.cfg.pr;
-    this.grade.uniforms.res.value.set(w * this.cfg.pr, bufH);
+    const bufH = hh * pr;
+    this.grade.uniforms.res.value.set(w * pr, bufH);
     this.particles && this.particles.setScale(bufH); this.ambient && this.ambient.setScale(bufH);
+    if (this.opp) this.opp.resize(w, hh, pr, this.baseFov);
+  }
+
+  /** Turn the horizontal split screen (me below, the opponent above) on or off. */
+  setSplit(on, opp = null) {
+    if (!on && this.opp) { this.opp.dispose(); this.opp = null; }
+    this.split = on; if (on) this.opp = opp;
+    document.body.classList.toggle('split', on);
+    if (this.fx) applyFxQuality(this.fx, on ? { ...this.cfg, rays: false } : this.cfg);
+    this.resize();
   }
 
   // ------------------------------------------------------------------ run lifecycle
@@ -284,7 +253,7 @@ export class Game {
 
   step(dt) {
     this.stepInner(dt);
-    if (this.coop && this.coop.active && this.state !== STATE.PAUSED) this.coop.update(dt);
+    if (this.coop && this.coop.active && this.state !== STATE.PAUSED) { this.coop.update(dt); if (this.opp) this.opp.update(dt, this.time); }
   }
 
   stepInner(dt) {
@@ -512,7 +481,7 @@ export class Game {
     this.updateFx(dt, this.speed); this.updateAtmosphere(dt);
     if (this.deathT > 1.5) {
       const co = this.coop;
-      if (co && co.active && co.partner.alive && !co.partner.gone) { this.state = STATE.DOWN; this.ui.showDown(true); }     // your buddy may still revive you
+      if (co && co.active && co.partner.alive && !co.partner.gone) { this.state = STATE.DOWN; this.ui.showDown(true, co.oppName()); }     // out, but the match goes on: watch the rival
       else this.finishRun();
     }
   }
@@ -539,12 +508,6 @@ export class Game {
   }
 
   reviveCost() { return 50 * Math.pow(2, this.revives); }
-
-  /** Your buddy brought you back (free). The generator state is left alone so both phones keep building the same maze. */
-  coopRevive() {
-    if (this.state !== STATE.DOWN && this.state !== STATE.DYING) return false;
-    this.revive({ free: true }); this.ui.showDown(false); return true;
-  }
 
   revive(opts = {}) {
     const save = Store.get(), cost = this.reviveCost();
@@ -605,7 +568,7 @@ export class Game {
 
   /** Offer the bonus car once the (team) score passes the threshold: a car pick-up appears ahead in your lane. */
   updateCarOffer() {
-    const p = this.player, w = this.world, score = this.coop && this.coop.active ? this.coop.teamScore() : this.score;
+    const p = this.player, w = this.world, score = this.score;
     if (this.carOffer && (!w.pickups.includes(this.carOffer) || this.carOffer.s < this.dist - 6)) {            // taken, or driven past
       if (!p.car) { this.nextCarAt = score + 5000; this.ui.toast('You missed the car… another one is coming', 'warn'); }
       this.carOffer = null;
@@ -632,7 +595,7 @@ export class Game {
     if (!p.car) return;
     this.timers.car = 0; p.setCar(false); p.invuln = 2.5;
     this.realmTarget = 0; Audio.setMood('normal'); Audio.engine(false); Audio.sfx.skid();
-    this.runCoins += CAR.bonusCoins; this.stats.coins = this.runCoins; this.nextCarAt = Math.max(this.nextCarAt, (this.coop && this.coop.active ? this.coop.teamScore() : this.score) + CAR.repeat);
+    this.runCoins += CAR.bonusCoins; this.stats.coins = this.runCoins; this.nextCarAt = Math.max(this.nextCarAt, this.score + CAR.repeat);
     this.particles.burst(p.x, 0.6, 0, 30, 0xbbbbbb, 4, 1.0, 0.4, 0);
     this.ui.toast(`Out of fuel! +${CAR.bonusCoins} coins`, 'mission'); this.shake = Math.max(this.shake, 0.4);
   }
@@ -648,16 +611,7 @@ export class Game {
     this.stats.smashed = (this.stats.smashed | 0) + 1;
   }
 
-  /** A revive heart for a fallen buddy, a little way ahead in your lane (never inside a junction). */
-  spawnHeart() {
-    const w = this.world, p = this.player;
-    let s = this.dist + 70;
-    if (w.track.corners.some((c) => Math.abs(c.s - s) < 16)) s += 40;
-    w.addPickup('heart', p.target, s);
-  }
-
   grant(type, x, y) {
-    if (type === 'heart') { Audio.sfx.power(); this.particles.burst(x, y, 0, 24, 0xff4f8b, 5, 0.7, 0.2, 1); this.coop && this.coop.onHeart(); return; }
     if (type === 'car') { this.carOffer = null; this.startCar(); return; }
     if ((type === 'wings' || type === 'jetpack') && this.player.car) { this.score += 400 * this.mult; this.ui.toast('Already flying… on four wheels!', 'power', '#ffb400'); return; }
     const save = Store.get(), def = POWERUPS[type];
@@ -699,29 +653,37 @@ export class Game {
   }
 
   /** Blend fog / sky / light colours between neighbouring biomes as you run. */
-  updateAtmosphere(dt) {
-    const d = this.dist;
-    const bi = Math.floor((d + 40) / BIOME_LEN), nb = (bi + 1) * BIOME_LEN;
-    const t = smooth(nb - 230, nb - 40, d);
+  /** The look of the world at track position `dist` (biomes blend into one another; R pulls it toward the Hollow Realm). */
+  atmosphereAt(dist, R) {
+    const bi = Math.floor((dist + 40) / BIOME_LEN), nb = (bi + 1) * BIOME_LEN, t = smooth(nb - 230, nb - 40, dist);
     const A = BIOMES[bi % BIOMES.length], B = BIOMES[(bi + 1) % BIOMES.length];
-    // the bonus car pulls the whole world into the Hollow Realm: eerie sky, tinted stone, lightning, synth-wave
     const hi = this.hollowIdx ?? (this.hollowIdx = BIOMES.findIndex((x) => x.id === 'hollow')), H = BIOMES[hi];
+    const col = (k) => { const c = new THREE.Color(A[k]).lerp(new THREE.Color(B[k]), t); return R > 0.001 ? c.lerp(new THREE.Color(H[k]), R) : c; };
+    const num = (k) => { const v = A[k] + (B[k] - A[k]) * t; return v + (H[k] - v) * R; };
+    return {
+      bi, t, hi, idx: t > 0.5 ? (bi + 1) % BIOMES.length : bi % BIOMES.length,
+      fog: col('fog'), density: num('fogDensity'), skyTop: col('skyTop'), skyBottom: col('skyBottom'), stars: A.star + (B.star - A.star) * t,
+      ambient: col('ambient'), ground: col('ground'), ambientI: num('ambientI'), sun: col('sun'), sunI: num('sunI'), accent: col('accent'), trim: col('trim'),
+    };
+  }
+
+  /** Paint an atmosphere onto one view (`st` = { scene, sky, hemi, sun, hills }). */
+  applyAtmosphere(st, a, time) {
+    st.scene.fog.color.copy(a.fog); st.scene.background.copy(a.fog); st.scene.fog.density = a.density;
+    const u = st.sky.material.uniforms; u.top.value.copy(a.skyTop); u.bottom.value.copy(a.skyBottom); u.stars.value = a.stars; u.time.value = time;
+    st.hemi.color.copy(a.ambient); st.hemi.groundColor.copy(a.ground); st.hemi.intensity = a.ambientI;
+    st.sun.color.copy(a.sun); st.sun.intensity = a.sunI;
+    for (const h of st.hills) h.material.color.copy(a.fog).lerp(a.skyTop, h.userData.mix).multiplyScalar(0.93);
+  }
+
+  updateAtmosphere(dt) {
+    // the bonus car pulls the whole world into the Hollow Realm: eerie sky, tinted stone, lightning, synth-wave
     this.realm = this.realm || 0; this.realmTarget = this.realmTarget || 0;
     this.realm += (this.realmTarget - this.realm) * damp(1.1, dt); if (Math.abs(this.realmTarget - this.realm) < 0.002) this.realm = this.realmTarget;
-    const R = this.realm;
-    const c = (k) => { const col = new THREE.Color(A[k]).lerp(new THREE.Color(B[k]), t); return R > 0.001 ? col.lerp(new THREE.Color(H[k]), R) : col; };
-    const num = (k) => { const v = A[k] + (B[k] - A[k]) * t; return v + (H[k] - v) * R; };
-    const fog = c('fog'); this.scene.fog.color.copy(fog); this.scene.background.copy(fog);
-    this.scene.fog.density = num('fogDensity');
-    this.sky.material.uniforms.top.value.copy(c('skyTop')); this.sky.material.uniforms.bottom.value.copy(c('skyBottom'));
-    this.sky.material.uniforms.stars.value = A.star + (B.star - A.star) * t;
-    this.sky.material.uniforms.time.value = this.time;
-    this.hemi.color.copy(c('ambient')); this.hemi.groundColor.copy(c('ground'));
-    this.hemi.intensity = num('ambientI');
-    this.sun.color.copy(c('sun')); this.sun.intensity = num('sunI');
-    this.ambient.setColor(c('accent'));
-    for (const h of this.hills) h.material.color.copy(fog).lerp(c('skyTop'), h.userData.mix).multiplyScalar(0.93);
-    this.dustColor = c('trim').offsetHSL(0, -0.1, -0.1).getHex();
+    const R = this.realm, a = this.atmosphereAt(this.dist, R);
+    this.applyAtmosphere(this.stage, a, this.time);
+    this.ambient.setColor(a.accent);
+    this.dustColor = a.trim.clone().offsetHSL(0, -0.1, -0.1).getHex();
     // stone, hedges and floors take a purple cast while the realm is up
     if (Math.abs(R - (this.tintApplied ?? -1)) > 0.01) {
       this.tintApplied = R; const tint = new THREE.Color(0x8a6aa6);
@@ -729,9 +691,9 @@ export class Game {
       const mul = new THREE.Color(1, 1, 1).lerp(tint, R * 0.5);
       for (const m of this.tintMats) { if (!m.userData.baseColor) m.userData.baseColor = m.color.clone(); m.color.copy(m.userData.baseColor).multiply(mul); }
     }
-    const idx = t > 0.5 ? (bi + 1) % BIOMES.length : bi % BIOMES.length;
+    const idx = a.idx;
     if (idx !== this.biomeIdx) { this.biomeIdx = idx; this.ui.onBiome(BIOMES[idx], this.state === STATE.RUNNING && this.dist > 50); }
-    const modeIdx = R > 0.5 ? hi : idx;
+    const modeIdx = R > 0.5 ? a.hi : idx;
     if (modeIdx !== this.modeIdx) { this.modeIdx = modeIdx; const mode = BIOMES[modeIdx].mode; this.ambient.setMode(mode[0], mode[1], mode[2]); }
     // storm: flickering light and the odd lightning strike (in the Hollow Realm and during the car ride)
     const storm = R > 0.3 || BIOMES[idx].storm;
@@ -788,6 +750,12 @@ export class Game {
       this.rays.uniforms.sun.value.set(v.x * 0.5 + 0.5, v.y * 0.5 + 0.5); this.rays.uniforms.intensity.value = 0.14 * vis;
     }
     for (const h of this.hills) { h.position.x = cam.position.x; h.position.z = cam.position.z; }
-    this.composer.render(dt);
+    if (this.split && this.opp) {
+      const rd = this.renderer, w = innerWidth, h = innerHeight, hh = Math.floor(h / 2);
+      rd.setScissorTest(true);
+      rd.setViewport(0, h - hh, w, hh); rd.setScissor(0, h - hh, w, hh); this.opp.render(dt);       // top half: the opponent's run
+      rd.setViewport(0, 0, w, hh); rd.setScissor(0, 0, w, hh); this.composer.render(dt);             // bottom half: my run
+      rd.setScissorTest(false); rd.setViewport(0, 0, w, h);
+    } else this.composer.render(dt);
   }
 }

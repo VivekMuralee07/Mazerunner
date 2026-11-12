@@ -494,8 +494,8 @@ try {
       const cur = p.target; let want = cur;
       if (!safe[1][cur]) for (const m of [cur - 1, cur + 1]) if (m >= 0 && m <= 2 && canEnter(m, g.dist) && safe[1][m]) { want = m; break; }
       const LX = [-2.4, 0, 2.4], bl = w.solids.find((sd) => sd.type === 'boulder' && !sd.ghost && sd.locked && sd.s1 > g.dist - 1);
-      if (bl && bl.s0 - g.dist < 28 && Math.abs(LX[cur] - bl.x) < 1.6) {            // sidestep a boulder that has locked onto our lane
-        for (const m of [cur - 1, cur + 1]) if (m >= 0 && m <= 2 && Math.abs(LX[m] - bl.x) > 1.8 && !fatal(m, g.dist + 3) && canEnter(m, g.dist)) { want = m; break; }
+      if (bl && bl.s0 - g.dist < 34 && Math.abs(LX[cur] - bl.x) < 1.6) {            // sidestep a boulder that has locked onto our lane
+        for (const m of [cur - 1, cur + 1]) if (m >= 0 && m <= 2 && Math.abs(LX[m] - bl.x) > 1.8 && !fatal(m, g.dist + 3) && !fatal(m, g.dist + 9) && canEnter(m, g.dist)) { want = m; break; }
       }
       if (want !== cur) g.action(want < cur ? 'left' : 'right');
       let near = null;
@@ -535,30 +535,37 @@ try {
     await A.click('#lobbyStart');
     await Promise.all([A, B].map((pg) => pg.waitForFunction(() => window.__game.coop.active && window.__game.state === 'running', null, { timeout: 240000 })));
     check('both phones start the match together', true);
-    const sig = (pg) => pg.evaluate(() => { const g = window.__game; for (let i = 0; i < 400; i++) g.step(1 / 60); return { sol: g.world.solids.filter((x) => !x.isCornerWall).slice(0, 30).map((x) => `${x.type}${x.lane}@${x.s0.toFixed(1)}`).join('|'), n: g.world.solids.length, miss: g.coop.missions.map((m) => m.text).join('|') }; });
+    const sig = (pg) => pg.evaluate(() => { const g = window.__game; g.player.invuln = 1e9; g.boulderT = 1e9; for (let i = 0; i < 400; i++) g.step(1 / 60); return { sol: g.world.solids.filter((x) => !x.isCornerWall).slice(0, 30).map((x) => `${x.type}${x.lane}@${x.s0.toFixed(1)}`).join('|'), n: g.world.solids.length, miss: g.coop.missions.map((m) => m.text).join('|') }; });
     const [sa, sb] = [await sig(A), await sig(B)];
     check('the two phones build an IDENTICAL maze (same obstacles in the same places)', sa.sol === sb.sol && sa.n > 5, sa.sol.slice(0, 50));
-    check('the three team missions are the same on both phones', sa.miss === sb.miss && sa.miss.split('|').length === 3, sa.miss);
+    check('the three versus missions are the same on both phones', sa.miss === sb.miss && sa.miss.split('|').length === 3, sa.miss);
     await A.waitForTimeout(1500); await B.waitForTimeout(1500);
-    const gh = await Promise.all([A, B].map((pg) => pg.evaluate(() => { const c = window.__game.coop; return { vis: !!(c.ghost && c.ghost.visible), name: c.ghost && c.ghost.name }; })));
-    check('each phone shows the other runner as a named ghost', gh[0].vis && gh[1].vis && gh[0].name === 'Bo' && gh[1].name === 'Ada', JSON.stringify(gh));
+    const sp2 = await Promise.all([A, B].map((pg) => pg.evaluate(() => { const g = window.__game, c = g.coop; return { split: g.split && document.body.classList.contains('split'), opp: !!c.opp, vis: !!(c.opp && c.opp.runner.visible), name: c.opp && c.opp.runner.name, dist: c.opp ? c.opp.dist : -1, own: g.dist }; })));
+    check('both phones are in horizontal split screen with the other runner on top', sp2.every((x) => x.split && x.opp), JSON.stringify(sp2));
+    check('each half shows the OTHER player by name, and their view follows their real progress', sp2[0].vis && sp2[1].vis && sp2[0].name === 'Bo' && sp2[1].name === 'Ada' && sp2[0].dist > 5 && sp2[1].dist > 5, JSON.stringify(sp2));
+    {
+      const png = await A.screenshot(); const { PNG } = await import('pngjs').catch(() => ({ PNG: null }));
+      let ok = png.length > 3000;
+      if (PNG) { const im = PNG.sync.read(png); const lum = (y) => { let v = 0, n = 0; for (let x = 0; x < im.width; x += 4) { const k = (y * im.width + x) * 4; v += im.data[k] + im.data[k + 1] + im.data[k + 2]; n++; } return v / n; }; ok = lum(Math.floor(im.height * 0.25)) > 20 && lum(Math.floor(im.height * 0.75)) > 20; }
+      check('both halves actually render (the top and the bottom half are not blank)', ok);
+    }
     await A.evaluate(() => { const g = window.__game; g.boulderT = 1e9; g.player.invuln = 0; g.die('crash'); });
     await B.waitForFunction(() => !window.__game.coop.partner.alive, null, { timeout: 30000 });
     await A.evaluate(() => { const g = window.__game; for (let i = 0; i < 200; i++) g.step(1 / 60); });
-    check('a fallen player waits "down" (not game over) and the buddy is told', await A.evaluate(() => window.__game.state === 'down') && await A.isVisible('#downBanner'));
+    check('a player who crashes is OUT (watching), not game over, while the other is told', await A.evaluate(() => window.__game.state === 'down') && await A.isVisible('#downBanner') && await B.evaluate(() => window.__game.coop.partner.fin && window.__game.coop.partner.fin.t > 0));
     await B.evaluate(() => { const g = window.__game; for (let i = 0; i < 240; i++) g.step(1 / 60); });
-    check('a revive heart appears for the survivor', await B.evaluate(() => window.__game.world.pickups.some((q) => q.type === 'heart')));
-    await B.evaluate(() => { const g = window.__game; g.grant('heart', g.player.x, 1); });
-    await A.waitForFunction(() => window.__game.state === 'countdown' || window.__game.state === 'running', null, { timeout: 30000 });
-    check('grabbing the heart revives the buddy, free of charge', await A.evaluate(() => !window.__game.player.dead) && !(await A.isVisible('#downBanner')));
-    await Promise.all([A, B].map((pg) => pg.waitForFunction(() => window.__game.state === 'running', null, { timeout: 150000 })));
-    const tm = await Promise.all([A, B].map((pg) => pg.evaluate(() => { const c = window.__game.coop; c.partner.stats = { ...c.partner.stats, c: 400, p: 20, j: 300, r: 300, d: 20000, b: 9, h: 9 }; c.partner.score = 200000; window.__game.runCoins = 5; c.checkMissions(); return { done: c.missions.filter((m) => m.done).length, reward: c.reward }; })));
-    check('team missions complete from the combined stats of both players, with a shared reward', tm[0].done >= 1 && tm[0].reward >= 120, JSON.stringify(tm[0]));
-    await A.evaluate(() => { const g = window.__game; g.player.invuln = 0; g.die('crash'); }); await B.evaluate(() => { const g = window.__game; g.player.invuln = 0; g.die('crash'); });
+    check('the survivor keeps playing after the other player is out', await B.evaluate(() => window.__game.state === 'running' && !window.__game.player.dead));
+    check('no revive hearts exist in a race', !(await B.evaluate(() => window.__game.world.pickups.some((q) => q.type === 'heart'))));
+    const claim = await B.evaluate(() => { const c = window.__game.coop; window.__game.runCoins = 5; const m = c.missions.find((x) => x.key === 'sc') || c.missions[0]; const k = m.key; const g = window.__game; if (k === 'c') g.runCoins = m.goal; else if (k === 'sc') g.score = m.goal; else if (k === 'd') g.dist = Math.max(g.dist, m.goal); else if (k === 'j') g.stats.jumps = m.goal; else if (k === 'r') g.stats.rolls = m.goal; else if (k === 'b') g.stats.boulders = m.goal; else g.stats.powerups = m.goal; c.checkMissions(); return { id: m.id, owner: m.owner }; });
+    check('reaching a mission goal first claims it', claim.owner === 'me', JSON.stringify(claim));
+    await A.waitForTimeout(500);
+    check('...and the opponent sees it as lost to the leader', await A.evaluate((id) => window.__game.coop.missions.find((x) => x.id === id).owner === 'opp', claim.id));
+    await B.evaluate(() => { const g = window.__game; g.player.invuln = 0; g.die('crash'); });
     await Promise.all([A, B].map((pg) => pg.evaluate(() => { const g = window.__game; for (let i = 0; i < 400; i++) g.step(1 / 60); })));
     await Promise.all([A, B].map((pg) => pg.waitForSelector('#coopOver.show', { timeout: 40000 })));
-    const txt = (await A.evaluate(() => document.getElementById('coopOver').innerText)).toLowerCase();
-    check('when both are down the team results show on both phones', txt.includes('team') && txt.includes('you') && txt.includes('bo'), txt.replace(/\n+/g, ' / ').slice(0, 120));
+    const ttl = await Promise.all([A, B].map((pg) => pg.evaluate(() => document.getElementById('coTitle').textContent.toLowerCase())));
+    check('whoever lasted longer wins: the survivor (Bo) sees "You win", Ada sees Bo win', ttl[1].includes('you win') && ttl[0].includes('bo wins'), JSON.stringify(ttl));
+    check('the split screen is switched off when the match ends', await A.evaluate(() => !window.__game.split && !document.body.classList.contains('split')));
     await A.click('#coAgain'); await A.waitForSelector('#lobby.show');
     check('"back to lobby" keeps the room open for a rematch', (await A.textContent('#lobbyBigCode')) === code);
     await A.context().close(); await B.context().close();

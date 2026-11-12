@@ -1,10 +1,11 @@
-// Two-player co-op: lobby (room codes), match sync, buddy ghost, revives and shared missions.
-// Both phones run the same seeded maze; this module only exchanges "where am I / how am I doing" messages.
+// Two-player versus: lobby (room codes), match sync, the opponent's live split-screen half and first-to missions.
+// Both phones run the same seeded maze and each runner plays on their own; this module only exchanges "where am I / how am I doing" messages.
+// Whoever lasts longer wins. A player who goes down is out but the other keeps running.
 import { COOP_MISSIONS, COOP_REWARD, COOP_ALL_BONUS } from './config.js';
 import * as Store from './storage.js';
 import * as Audio from './audio.js';
 import { Net } from './net.js';
-import { Ghost } from './ghost.js';
+import { OpponentView } from './split.js';
 import { mulberry } from './world.js';
 
 export class Coop {
@@ -15,8 +16,8 @@ export class Coop {
   }
 
   reset() {
-    this.partner = { alive: true, score: 0, dist: 0, stats: {}, gone: false };
-    this.ghost = null; this.missions = []; this.reward = 0; this.allBonus = false; this.sendT = 0; this.stT = 0; this.heartT = 0; this.helpedHeart = null; this.checkT = 0;
+    this.partner = { alive: true, score: 0, dist: 0, stats: {}, gone: false, fin: null };
+    this.opp = null; this.missions = []; this.reward = 0; this.sendT = 0; this.stT = 0; this.checkT = 0; this.myFin = null; this.matchBonus = 0;
   }
 
   // ---------------------------------------------------------------- lobby
@@ -45,11 +46,11 @@ export class Coop {
   create() { this.error = ''; this.net.send({ t: 'create', ...this.me() }); }
   join(code) { this.error = ''; this.stage = 'joining'; this.ui.lobby(this); this.net.send({ t: 'join', code, ...this.me() }); }
   start() { if (this.slot === 0 && this.stage === 'ready') this.net.send({ t: 'start' }); }
-  leave() { if (this.net) { this.net.send({ t: 'leave' }); this.net.close(); } this.net = null; this.stage = 'idle'; this.code = ''; this.peer = null; this.active = false; this.cleanupGhost(); }
+  leave() { if (this.net) { this.net.send({ t: 'leave' }); this.net.close(); } this.net = null; this.stage = 'idle'; this.code = ''; this.peer = null; this.active = false; this.cleanupOpp(); }
 
   onPeerLeft() {
     if (this.active) {
-      this.partner.gone = true; this.partner.alive = false; this.ui.toast('Your buddy left the match', 'warn');
+      this.partner.gone = true; this.partner.alive = false; this.ui.toast('Your opponent left: you win if you last', 'warn');
       if (this.game.state === 'down') this.game.finishRun();
     } else { this.peer = null; this.stage = 'waiting'; this.slot = 0; this.ui.lobby(this); }
   }
@@ -66,24 +67,22 @@ export class Coop {
     this.missions = [];
     for (let i = 0; i < 3; i++) {
       const t = pool.splice(Math.floor(r() * pool.length), 1)[0], goal = t.goals[Math.floor(r() * 2.99)];
-      this.missions.push({ id: t.id, key: t.key, goal, text: t.text(goal), done: false, progress: 0 });
+      this.missions.push({ id: t.id, key: t.key, goal, text: t.text(goal), done: false, progress: 0, owner: null, pendingAt: 0 });
     }
-    this.cleanupGhost();
-    this.ghost = new Ghost(this.peer ? this.peer.name : 'Buddy', this.peer ? this.peer.skin : 'shadow', this.game.S);
+    this.cleanupOpp();
+    this.opp = new OpponentView(this.game, seed, this.peer ? this.peer.name : 'Rival', this.peer ? this.peer.skin : 'shadow');
+    this.game.setSplit(true, this.opp);
     this.ui.coopBegin(this);
   }
 
-  cleanupGhost() { if (this.ghost) { this.ghost.dispose(); this.ghost = null; } }
+  cleanupOpp() { this.opp = null; if (this.game.split) this.game.setSplit(false); }
+  oppName() { return this.opp ? this.opp.runner.name : (this.peer ? this.peer.name : 'Rival'); }
 
   ownStats() {
     const g = this.game, s = g.stats;
     return { c: g.runCoins | 0, j: s.jumps | 0, r: s.rolls | 0, d: Math.floor(g.dist), b: s.boulders | 0, h: s.helped | 0, p: s.powerups | 0, k: s.cars | 0 };
   }
-  teamStat(key) {
-    const own = key === 'sc' ? this.game.score : (this.ownStats()[key] || 0), other = key === 'sc' ? this.partner.score : (this.partner.stats[key] || 0);
-    return own + other;
-  }
-  teamScore() { return this.game.score + (this.partner.gone ? 0 : this.partner.score); }
+  stat(key) { return key === 'sc' ? Math.floor(this.game.score) : (this.ownStats()[key] || 0); }
 
   /** Called every frame while a match is on (running, counting down, dying or down). */
   update(dt) {
@@ -96,77 +95,87 @@ export class Coop {
       if (this.stT >= 0.5) { this.stT = 0; m.st = this.ownStats(); }
       this.net && this.net.send(m);
     }
-    if (this.ghost) this.ghost.update(dt, g.world.track, g.dist);
-    // hearts for a fallen buddy: one every ~90 m ahead until they are back on their feet
-    if (!this.partner.alive && !this.partner.gone && g.state === 'running') {
-      this.heartT -= dt;
-      const live = g.world.pickups.some((q) => q.type === 'heart');
-      if (this.heartT <= 0 && !live) { this.heartT = 1; g.spawnHeart(); }
-    }
     this.checkT += dt;
-    if (this.checkT >= 0.4) { this.checkT = 0; this.checkMissions(); }
+    if (this.checkT >= 0.25) { this.checkT = 0; this.checkMissions(); }
     this.ui.coopHud(this);
   }
 
   onState(m) {
     const P = this.partner;
-    if (this.ghost) this.ghost.receive(m);
+    if (this.opp) this.opp.receive(m);
     P.score = m.sc || 0; P.dist = m.s || 0; if (m.st) P.stats = m.st;
-    const alive = !!m.a;
-    if (alive !== P.alive) { P.alive = alive; if (!alive) this.onPartnerDown(); else this.ui.toast(`${this.ghost ? this.ghost.name : 'Buddy'} is back on their feet!`, 'mission'); }
   }
 
   onEvent(m) {
-    if (m.kind === 'revive') this.game.coopRevive();                  // our buddy grabbed a heart for us
-    else if (m.kind === 'dead') { this.partner.alive = false; this.onPartnerDown(); }
+    if (m.kind === 'dead') this.onOpponentDown(m);
+    else if (m.kind === 'claim') this.onClaim(m);
   }
 
-  onPartnerDown() {
-    const g = this.game;
-    if (g.state === 'down') { g.finishRun(); return; }                // we were down too: that's the match
-    if (g.state === 'dying') return;                                  // our own death resolves in stepDying
-    this.ui.toast('Buddy is down! Grab the ❤ to revive them', 'warn'); Audio.sfx.growl(); this.heartT = 1.5;
+  onOpponentDown(m) {
+    const P = this.partner, g = this.game;
+    if (!P.alive) return;
+    P.alive = false; P.fin = { t: +m.rt || 0, score: m.sc | 0, dist: m.d | 0, coins: m.c | 0 };
+    P.score = Math.max(P.score, P.fin.score); P.dist = Math.max(P.dist, P.fin.dist);
+    if (g.state === 'down') { g.finishRun(); return; }                 // we were out too: the match is over
+    if (g.state === 'dying') return;                                    // both fell together: our own death resolves in stepDying
+    this.ui.toast(`${this.oppName()} is out! Keep going to win`, 'mission'); Audio.sfx.mission();
   }
 
-  /** The local player collected a heart. */
-  onHeart() {
-    if (!this.active || this.partner.alive || this.partner.gone) return;
-    this.net && this.net.send({ t: 'event', kind: 'revive' });
-    this.partner.alive = true; this.game.stats.helped = (this.game.stats.helped | 0) + 1;
-    this.ui.toast('You revived your buddy!', 'mission'); Audio.sfx.power(); this.game.score += 500 * this.game.mult;
+  /** The local player crashed: tell the opponent how long and how far we lasted. */
+  onLocalDeath() {
+    const g = this.game; this.myFin = { t: g.runTime, score: Math.floor(g.score), dist: Math.floor(g.dist), coins: g.runCoins | 0 };
+    this.net && this.net.send({ t: 'event', kind: 'dead', rt: +this.myFin.t.toFixed(2), sc: this.myFin.score, d: this.myFin.dist, c: this.myFin.coins });
   }
 
-  onLocalDeath() { this.net && this.net.send({ t: 'event', kind: 'dead' }); }
+  /** First to reach a mission goal claims it. Ties (both within ~0.7 s) go to the earlier run clock, then to the host. */
+  onClaim(m) {
+    const ms = this.missions.find((x) => x.id === m.id); if (!ms || ms.owner === 'opp' || (ms.owner === 'me' && !ms.pendingAt)) return;
+    const rt = +m.rt || 0;
+    if (ms.pendingAt && (rt > ms.claimT || (Math.abs(rt - ms.claimT) < 0.01 && this.slot === 0))) return;   // our claim was earlier (or we are host on a tie)   // our claim was earlier: ignore theirs
+    ms.owner = 'opp'; ms.pendingAt = 0; ms.progress = ms.goal; ms.done = true;
+    this.ui.toast(`${this.oppName()} got it first: ${ms.text}`, 'warn');
+  }
 
   checkMissions() {
+    const g = this.game, now = performance.now();
     for (const ms of this.missions) {
-      ms.progress = Math.max(ms.progress, Math.min(ms.goal, Math.floor(this.teamStat(ms.key))));
-      if (!ms.done && ms.progress >= ms.goal) {
-        ms.done = true; this.reward += COOP_REWARD;
-        const s = Store.get(); s.coins += COOP_REWARD; Store.save();
-        this.ui.toast(`Team mission complete: ${ms.text}`, 'mission'); Audio.sfx.mission();
+      if (ms.owner === 'opp') continue;
+      ms.progress = Math.max(ms.progress, Math.min(ms.goal, Math.floor(this.stat(ms.key))));
+      if (!ms.owner && ms.progress >= ms.goal && !g.player.dead) {
+        ms.owner = 'me'; ms.pendingAt = now; ms.claimT = g.runTime;
+        this.net && this.net.send({ t: 'event', kind: 'claim', id: ms.id, rt: +g.runTime.toFixed(2) });
       }
-    }
-    if (!this.allBonus && this.missions.length && this.missions.every((x) => x.done)) {
-      this.allBonus = true; this.reward += COOP_ALL_BONUS; const s = Store.get(); s.coins += COOP_ALL_BONUS; Store.save();
-      this.ui.toast(`All team missions done! +${COOP_ALL_BONUS} coins`, 'mission');
+      if (ms.owner === 'me' && ms.pendingAt && now - ms.pendingAt > 700) {          // nobody beat us to it
+        ms.pendingAt = 0; ms.done = true; this.reward += COOP_REWARD;
+        const s = Store.get(); s.coins += COOP_REWARD; Store.save();
+        this.ui.toast(`Mission claimed: ${ms.text} (+${COOP_REWARD})`, 'mission'); Audio.sfx.mission();
+      }
     }
   }
 
-  /** Final results for the team summary. */
+  /** How long each player lasted (a runner still going counts up to now). */
+  lasted() {
+    const g = this.game, P = this.partner;
+    return { me: this.myFin ? this.myFin.t : g.runTime, opp: P.fin ? P.fin.t : (P.gone ? -1 : Infinity) };
+  }
+
   results() {
-    this.checkMissions();
-    const g = this.game;
+    const g = this.game, P = this.partner, L = this.lasted();
+    const me = this.myFin || { t: g.runTime, score: Math.floor(g.score), dist: Math.floor(g.dist), coins: g.runCoins | 0 };
+    const opp = P.fin || { t: P.gone ? 0 : g.runTime, score: P.score | 0, dist: Math.floor(P.dist), coins: P.stats.c | 0 };
+    let winner;
+    if (P.gone) winner = 'me';
+    else if (Math.abs(L.me - L.opp) > 0.05) winner = L.me > L.opp ? 'me' : 'opp';
+    else winner = me.score >= opp.score ? (me.score === opp.score ? 'tie' : 'me') : 'opp';
     return {
-      me: { name: this.me().name, score: Math.floor(g.score), dist: Math.floor(g.dist), coins: g.runCoins | 0 },
-      buddy: { name: this.ghost ? this.ghost.name : 'Buddy', score: this.partner.score | 0, dist: Math.floor(this.partner.dist), coins: this.partner.stats.c | 0, gone: this.partner.gone },
-      team: Math.floor(this.teamScore()), missions: this.missions.map((m) => ({ text: m.text, done: m.done, progress: m.progress, goal: m.goal })), reward: this.reward,
+      winner, me: { name: this.me().name, ...me }, opp: { name: this.oppName(), ...opp, gone: P.gone },
+      missions: this.missions.map((m) => ({ text: m.text, owner: m.owner, done: m.done, progress: m.progress, goal: m.goal })), reward: this.reward,
     };
   }
 
   /** Match is over for both: go back to the lobby, keeping the room. */
   end() {
-    this.active = false; this.cleanupGhost(); this.net && this.net.send({ t: 'over' });
+    this.active = false; this.cleanupOpp(); this.net && this.net.send({ t: 'over' });
     this.stage = this.net && this.net.open && this.peer && !this.partner.gone ? 'ready' : (this.net && this.net.open ? 'waiting' : 'idle');
   }
 }
