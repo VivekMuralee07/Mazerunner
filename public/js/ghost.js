@@ -43,6 +43,7 @@ export class Ghost {
   /** Glide toward the latest report (extrapolating a little while it is alive). */
   smooth(dt) {
     if (this.s === null) return false;
+    this.visible = true;
     const t = this.target, age = Math.min(0.5, (performance.now() - t.at) / 1000);
     const sEst = t.alive ? t.s + t.sp * age : t.s, k = Math.min(1, dt * 9);
     this.s += (sEst - this.s) * k; this.x += (t.x - this.x) * k; this.y += (t.y - this.y) * k;

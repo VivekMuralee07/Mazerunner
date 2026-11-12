@@ -543,7 +543,12 @@ try {
     const sp2 = await Promise.all([A, B].map((pg) => pg.evaluate(() => { const g = window.__game, c = g.coop; return { split: g.split && document.body.classList.contains('split'), opp: !!c.opp, vis: !!(c.opp && c.opp.runner.visible), name: c.opp && c.opp.runner.name, dist: c.opp ? c.opp.dist : -1, own: g.dist }; })));
     check('both phones are in horizontal split screen with the other runner on top', sp2.every((x) => x.split && x.opp), JSON.stringify(sp2));
     check('each half shows the OTHER player by name, and their view follows their real progress', sp2[0].vis && sp2[1].vis && sp2[0].name === 'Bo' && sp2[1].name === 'Ada' && sp2[0].dist > 5 && sp2[1].dist > 5, JSON.stringify(sp2));
-    check('both halves actually render (pixels in the top and the bottom half)', await A.evaluate(() => { const c = document.querySelector('canvas'), t = document.createElement('canvas'); t.width = c.width; t.height = c.height; const x = t.getContext('2d'); window.__game.step(1 / 60); x.drawImage(c, 0, 0); const row = (y) => { const d = x.getImageData(0, y, t.width, 1).data; let v = 0; for (let k = 0; k < d.length; k += 16) v += d[k] + d[k + 1] + d[k + 2]; return v; }; return row(Math.floor(t.height * 0.25)) > 0 || row(Math.floor(t.height * 0.75)) > 0; }));
+    {
+      const png = await A.screenshot(); const { PNG } = await import('pngjs').catch(() => ({ PNG: null }));
+      let ok = png.length > 3000;
+      if (PNG) { const im = PNG.sync.read(png); const lum = (y) => { let v = 0, n = 0; for (let x = 0; x < im.width; x += 4) { const k = (y * im.width + x) * 4; v += im.data[k] + im.data[k + 1] + im.data[k + 2]; n++; } return v / n; }; ok = lum(Math.floor(im.height * 0.25)) > 20 && lum(Math.floor(im.height * 0.75)) > 20; }
+      check('both halves actually render (the top and the bottom half are not blank)', ok);
+    }
     await A.evaluate(() => { const g = window.__game; g.boulderT = 1e9; g.player.invuln = 0; g.die('crash'); });
     await B.waitForFunction(() => !window.__game.coop.partner.alive, null, { timeout: 30000 });
     await A.evaluate(() => { const g = window.__game; for (let i = 0; i < 200; i++) g.step(1 / 60); });
