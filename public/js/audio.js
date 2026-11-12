@@ -88,6 +88,7 @@ export const sfx = {
     tone(140, 0.9, { type: 'square', vol: 0.1, slide: -60 });
     noise(0.9, { vol: 0.22, freq: 400, sweep: 300, q: 2 });
   },
+  turn() { noise(0.35, { vol: 0.2, freq: 900, sweep: -600, q: 0.8 }); tone(330, 0.2, { type: 'triangle', vol: 0.12, slide: 220 }); },
   rumble() { noise(0.55, { vol: 0.5, freq: 160, sweep: -60, q: 0.7, type: 'lowpass' }); tone(48, 0.5, { type: 'sine', vol: 0.35, slide: -10 }); },
   growl() { tone(70, 0.5, { type: 'sawtooth', vol: 0.12, slide: 15 }); noise(0.5, { vol: 0.08, freq: 300, type: 'lowpass' }); },
   power() { [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.25, { type: 'triangle', vol: 0.22, delay: i * 0.07 })); },

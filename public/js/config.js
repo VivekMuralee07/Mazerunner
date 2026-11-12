@@ -53,32 +53,41 @@ export const SKINS = [
   { id: 'gold',     name: 'Pharaoh',   cost: 5000, skin: 0xd8a779, tunic: 0xe0a400, pants: 0xf4f1de, accent: 0x00e5ff, hair: 0x0b0b0b, glow: 0xffe066 },
 ];
 
-// Four sunlit biomes of the living labyrinth. Colours drive fog, sky, lights and materials.
+// Eight biomes of the living labyrinth, 1.5 km each, blending into one another. Colours drive fog, sky, lights and materials.
+// fog/sky colours are deliberately mid-tone (not near-white) so the horizon doesn't glow.
 export const BIOMES = [
-  {
-    id: 'hedge', name: 'The Sunlit Garden Maze',
-    fog: 0xd3ecd9, fogDensity: 0.0105, skyTop: 0x4aa3ff, skyBottom: 0xe3f5ff, star: 0,
-    ambient: 0xe6f4ff, ground: 0xb8c79a, ambientI: 1.35, sun: 0xfff0cc, sunI: 2.7, torch: 0xffa93a, accent: 0xff9f1c,
-    wall: 'hedge', floor: 'cobble', trim: 0x8fb083,
-  },
-  {
-    id: 'stone', name: 'The Golden Ruins',
-    fog: 0xf3e2cf, fogDensity: 0.0115, skyTop: 0x5fa8ff, skyBottom: 0xffeed6, star: 0,
-    ambient: 0xfff1e2, ground: 0xcfb597, ambientI: 1.35, sun: 0xffe3b0, sunI: 2.7, torch: 0xff9a3c, accent: 0xff7b54,
-    wall: 'stone', floor: 'flag', trim: 0xb9a58c,
-  },
-  {
-    id: 'crystal', name: 'The Frozen Crystal Gardens',
-    fog: 0xd2edf9, fogDensity: 0.0115, skyTop: 0x3d98ee, skyBottom: 0xe9faff, star: 0,
-    ambient: 0xe2f4ff, ground: 0xa9c9d8, ambientI: 1.4, sun: 0xf2fbff, sunI: 2.5, torch: 0x2ec8ff, accent: 0x18b8e0,
-    wall: 'crystal', floor: 'slate', trim: 0x86b6cc,
-  },
-  {
-    id: 'lava', name: 'The Ember Canyon',
-    fog: 0xf8d9c1, fogDensity: 0.0115, skyTop: 0xff8e4a, skyBottom: 0xffe6c4, star: 0,
-    ambient: 0xfff0e4, ground: 0xd3a789, ambientI: 1.3, sun: 0xffd3a1, sunI: 2.6, torch: 0xff5a1f, accent: 0xff6a1a,
-    wall: 'basalt', floor: 'ember', trim: 0xc28a68,
-  },
+  { id: 'hedge', name: 'The Sunlit Garden Maze',
+    fog: 0xb5d6bf, fogDensity: 0.0105, skyTop: 0x3f94f0, skyBottom: 0xbcdcf2, star: 0,
+    ambient: 0xdceaff, ground: 0x9db386, ambientI: 0.95, sun: 0xffeccb, sunI: 2.3, torch: 0xffa93a, accent: 0xff9f1c,
+    wall: 'hedge', floor: 'cobble', trim: 0x7fa174, mode: [-0.5, 2.4, 0xb6d84a] },
+  { id: 'blossom', name: 'The Cherry Blossom Gardens',
+    fog: 0xe8c8d6, fogDensity: 0.0105, skyTop: 0x5aa0f0, skyBottom: 0xf6d9e6, star: 0,
+    ambient: 0xffeaf2, ground: 0xc3a0ae, ambientI: 0.95, sun: 0xffe4d2, sunI: 2.3, torch: 0xffa0c0, accent: 0xff6fa5,
+    wall: 'blossom', floor: 'pinkpath', trim: 0xb08a8f, mode: [-0.4, 2.8, 0xffb7d1] },
+  { id: 'stone', name: 'The Golden Ruins',
+    fog: 0xe4cdb0, fogDensity: 0.0115, skyTop: 0x4f9cf4, skyBottom: 0xf0d6b4, star: 0,
+    ambient: 0xfff0e0, ground: 0xb89c7c, ambientI: 0.95, sun: 0xffdea8, sunI: 2.3, torch: 0xff9a3c, accent: 0xff7b54,
+    wall: 'stone', floor: 'flag', trim: 0xa8937a, mode: [0.12, 1.4, 0xffe3a6] },
+  { id: 'autumn', name: 'The Autumn Orchard',
+    fog: 0xe6c3a0, fogDensity: 0.011, skyTop: 0x5a9ae6, skyBottom: 0xf3d2a8, star: 0,
+    ambient: 0xffe9d2, ground: 0xb08a62, ambientI: 0.95, sun: 0xffd9a0, sunI: 2.3, torch: 0xff8a2a, accent: 0xff8a2a,
+    wall: 'autumn', floor: 'leaflitter', trim: 0x9a6a3e, mode: [-0.6, 2.6, 0xff9a3a] },
+  { id: 'crystal', name: 'The Frozen Crystal Gardens',
+    fog: 0xbadcec, fogDensity: 0.0115, skyTop: 0x2f86e6, skyBottom: 0xcdeaf8, star: 0,
+    ambient: 0xdceeff, ground: 0x93b3c4, ambientI: 1.0, sun: 0xeaf6ff, sunI: 2.1, torch: 0x2ec8ff, accent: 0x18b8e0,
+    wall: 'crystal', floor: 'slate', trim: 0x74a0b8, mode: [-0.35, 1.8, 0xffffff] },
+  { id: 'jungle', name: 'The Overgrown Temple',
+    fog: 0xb4d4b0, fogDensity: 0.0125, skyTop: 0x3a96c8, skyBottom: 0xc6e6cf, star: 0,
+    ambient: 0xe0f2dc, ground: 0x7a9468, ambientI: 0.9, sun: 0xfff0c0, sunI: 2.2, torch: 0x7dff6a, accent: 0x3fd18a,
+    wall: 'mossy', floor: 'mossflag', trim: 0x6a8a62, mode: [0.1, 1.8, 0xd8ff7a] },
+  { id: 'lava', name: 'The Ember Canyon',
+    fog: 0xe6bfa4, fogDensity: 0.0115, skyTop: 0xf0803e, skyBottom: 0xf6d2ac, star: 0,
+    ambient: 0xffeadb, ground: 0xb98a6c, ambientI: 0.92, sun: 0xffcb98, sunI: 2.3, torch: 0xff5a1f, accent: 0xff6a1a,
+    wall: 'basalt', floor: 'ember', trim: 0xb07a58, mode: [0.55, 1.6, 0xff7a2a] },
+  { id: 'coral', name: 'The Sunken Coral Palace',
+    fog: 0xa9dcdc, fogDensity: 0.0125, skyTop: 0x1f9ccc, skyBottom: 0xb8ece6, star: 0,
+    ambient: 0xd8f6f4, ground: 0x7fb4b0, ambientI: 1.0, sun: 0xeaffff, sunI: 2.1, torch: 0xff8aa8, accent: 0xff6f8f,
+    wall: 'coral', floor: 'pearl', trim: 0xc09a86, mode: [0.5, 2.0, 0xffffff] },
 ];
 
 export const MISSION_TEMPLATES = [

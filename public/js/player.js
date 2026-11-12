@@ -157,7 +157,7 @@ export class Player {
     } else r.hips.rotation.z = 0;
 
     // lean into lane changes
-    this.model.rotation.z = -this.laneLean * 0.32;
+    this.model.rotation.z = -this.laneLean * 0.32 + clamp(this.bank || 0, -1.2, 1.2) * 0.35;
     this.model.rotation.y = -this.laneLean * 0.5;
     r.scarf.update(t, speed, this.laneLean, this.grounded);
 
