@@ -276,6 +276,9 @@ function iconTexture(type, color) {
     x.fillStyle = '#10131c'; x.beginPath(); x.moveTo(44, 76); x.lineTo(30, 98); x.lineTo(50, 86); x.closePath(); x.fill();
     x.beginPath(); x.moveTo(84, 76); x.lineTo(98, 98); x.lineTo(78, 86); x.closePath(); x.fill();
     x.fillStyle = '#fff'; x.beginPath(); x.moveTo(54, 84); x.lineTo(64, 106); x.lineTo(74, 84); x.closePath(); x.fill();
+  } else if (type === 'heart') {
+    x.fillStyle = '#10131c'; x.beginPath(); x.moveTo(64, 98); x.bezierCurveTo(20, 66, 26, 30, 50, 30); x.bezierCurveTo(60, 30, 64, 38, 64, 42); x.bezierCurveTo(64, 38, 68, 30, 78, 30); x.bezierCurveTo(102, 30, 108, 66, 64, 98); x.fill();
+    x.fillStyle = '#fff'; x.beginPath(); x.arc(50, 48, 7, 0, 6.28); x.fill();
   } else if (type === 'shield') {
     x.beginPath(); x.moveTo(64, 26); x.lineTo(94, 38); x.quadraticCurveTo(94, 78, 64, 100); x.quadraticCurveTo(34, 78, 34, 38); x.closePath(); x.stroke();
     x.beginPath(); x.moveTo(64, 44); x.lineTo(64, 84); x.moveTo(48, 58); x.lineTo(80, 58); x.stroke();
@@ -285,6 +288,7 @@ function iconTexture(type, color) {
 }
 
 export function buildPowerup(type, color, S) {
+  if (type === 'car') return buildCarPickup(color, S);
   const g = new THREE.Group();
   const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: iconTexture(type, color), transparent: true }));
   spr.scale.set(1.35, 1.35, 1); spr.position.y = 0.2; g.add(spr);
@@ -551,5 +555,55 @@ export function buildBoulder(S) {
   const mark = new THREE.Mesh(new THREE.PlaneGeometry(2.3, 30), new THREE.MeshBasicMaterial({ map: warningTexture(), transparent: true, depthWrite: false, opacity: 1 }));
   mark.rotation.x = -Math.PI / 2; mark.position.set(0, 0.05, 15); g.add(mark);
   g.userData = { rock, glow, mark };
+  return g;
+}
+
+// ---------------------------------------------------------------- the bonus car (a rusty-orange 80s wagon with neon underglow)
+export function buildCar(accent = 0xffd23f) {
+  const g = new THREE.Group();
+  const body = new THREE.MeshStandardMaterial({ color: 0xc2542a, roughness: 0.45, metalness: 0.5 });
+  const dark = new THREE.MeshStandardMaterial({ color: 0x20232b, roughness: 0.6, metalness: 0.4 });
+  const glass = new THREE.MeshStandardMaterial({ color: 0x1b2a3a, roughness: 0.08, metalness: 0.7, emissive: 0x0a1a2a, emissiveIntensity: 0.6 });
+  const stripe = new THREE.MeshStandardMaterial({ color: accent, roughness: 0.4, metalness: 0.3, emissive: accent, emissiveIntensity: 0.25 });
+  const chrome = new THREE.MeshStandardMaterial({ color: 0xd8dde6, roughness: 0.15, metalness: 0.95 });
+  const add = (geo, mat, x, y, z) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.castShadow = true; g.add(m); return m; };
+  add(boxGeo(1.9, 0.62, 4.2, 2), body, 0, 0.66, 0);                                   // lower body
+  add(boxGeo(1.78, 0.5, 2.5, 2), body, 0, 1.22, 0.45);                                // cabin
+  const ws = add(boxGeo(1.7, 0.5, 0.06, 2), glass, 0, 1.2, -0.84); ws.rotation.x = 0.42;       // windscreen
+  add(boxGeo(1.7, 0.42, 0.06, 2), glass, 0, 1.22, 1.7);                               // rear window
+  for (const sx of [-1, 1]) add(boxGeo(0.05, 0.38, 2.0, 2), glass, sx * 0.9, 1.25, 0.45);   // side windows
+  add(boxGeo(1.84, 0.14, 1.2, 2), body, 0, 0.99, -1.45);                              // hood
+  add(boxGeo(0.4, 0.05, 4.1, 2), stripe, 0.52, 0.99, 0); add(boxGeo(0.4, 0.05, 4.1, 2), stripe, -0.52, 0.99, 0);   // racing stripes
+  for (const sz of [-1, 1]) add(boxGeo(2.0, 0.26, 0.28, 2), dark, 0, 0.42, sz * 2.12);   // bumpers
+  add(boxGeo(1.6, 0.05, 1.6, 2), dark, 0, 1.52, 0.5);                                 // roof rack
+  for (const sx of [-0.7, 0.7]) add(boxGeo(0.06, 0.06, 1.6, 2), chrome, sx, 1.57, 0.5);
+  const lens = new THREE.MeshBasicMaterial({ color: 0xfff1b8 }), tail = new THREE.MeshBasicMaterial({ color: 0xff2a2a });
+  for (const sx of [-0.65, 0.65]) { add(cylGeo(0.17, 0.17, 0.06, 14), lens, sx, 0.74, -2.12).rotation.x = Math.PI / 2; add(boxGeo(0.4, 0.14, 0.05, 2), tail, sx, 0.76, 2.12); }
+  const wheels = [];
+  for (const [x, z] of [[-0.98, -1.35], [0.98, -1.35], [-0.98, 1.35], [0.98, 1.35]]) {
+    const w = new THREE.Group(); w.position.set(x, 0.38, z);
+    const tire = new THREE.Mesh(cylGeo(0.38, 0.38, 0.3, 18), dark); tire.rotation.z = Math.PI / 2; tire.castShadow = true; w.add(tire);
+    const hub = new THREE.Mesh(cylGeo(0.2, 0.2, 0.32, 10), chrome); hub.rotation.z = Math.PI / 2; w.add(hub);
+    const spoke = new THREE.Mesh(boxGeo(0.34, 0.06, 0.34, 1), dark); w.add(spoke);
+    g.add(w); wheels.push(w);
+  }
+  // driver peeking out of the window
+  add(sphereGeo(0.17, 12, 8), new THREE.MeshStandardMaterial({ color: 0xf1c7a0, roughness: 0.6 }), -0.4, 1.3, 0.1);
+  add(new THREE.SphereGeometry(0.18, 12, 8, 0, Math.PI * 2, 0, Math.PI * 0.55), new THREE.MeshStandardMaterial({ color: 0x3a2417, roughness: 0.8 }), -0.4, 1.34, 0.11);
+  // neon underglow + a soft headlight pool
+  const glow = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 5.0), new THREE.MeshBasicMaterial({ color: accent, transparent: true, opacity: 0.38, depthWrite: false }));
+  glow.rotation.x = -Math.PI / 2; glow.position.y = 0.05; g.add(glow);
+  const pool = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 6), new THREE.MeshBasicMaterial({ color: 0xfff0b0, transparent: true, opacity: 0.2, depthWrite: false }));
+  pool.rotation.x = -Math.PI / 2; pool.position.set(0, 0.06, -5); g.add(pool);
+  g.userData = { wheels, glow };
+  return g;
+}
+
+export function buildCarPickup(color, S) {
+  const g = new THREE.Group();
+  const car = buildCar(0xffd23f); car.scale.setScalar(0.5); car.position.y = -0.85; car.rotation.y = 0.5; g.add(car);
+  const halo = new THREE.Sprite(S.glowSprite(color, 1.0)); halo.scale.set(4.2, 4.2, 1); g.add(halo);
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(1.5, 0.05, 8, 40), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.95, depthWrite: false })); ring.rotation.x = Math.PI / 2.4; g.add(ring);
+  g.userData = { spr: car, halo, ring, car };
   return g;
 }

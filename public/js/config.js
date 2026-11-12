@@ -40,6 +40,8 @@ export const POWERUPS = {
   boots:  { name: 'Spring Boots', icon: '👢', color: '#37e08a', base: 9, step: 2.5, desc: 'Jump much higher', cost: [200, 400, 800, 1600, 3200] },
   wings:  { name: 'Wings', icon: '🪽', color: '#6fd6ff', base: 6, step: 1.2, desc: 'Fly over the maze, safely', cost: [300, 600, 1200, 2400, 4800] },
   jetpack: { name: 'Jetpack', icon: '🚀', color: '#ff7a1a', base: 15, step: 0, desc: 'Blast over the maze for 15 seconds, collecting sky coins', cost: [] },
+  car: { name: 'Bonus Car', icon: '🚗', color: '#ff4a5e', base: 120, step: 0, desc: 'Drive a car for 2 minutes', cost: [] },
+  heart: { name: 'Revive Heart', icon: '❤', color: '#ff4f8b', base: 0, step: 0, desc: 'Brings your buddy back', cost: [] },
   shield: { name: 'Spirit Shield', icon: '🛡', color: '#b388ff', base: 0, step: 0, desc: 'Absorbs one crash', cost: [] },
 };
 export const MAX_UPGRADE = 5;
@@ -101,3 +103,17 @@ export const MISSION_TEMPLATES = [
   { id: 'climb',  text: (n) => `Climb onto ${n} stone slabs`,           key: 'climbs',   goals: [4, 8, 14, 22, 32] },
 ];
 export const MAX_MULTIPLIER = 10;
+
+// ---- Co-op (two-player) team missions. Progress = your stat + your buddy's stat. key = field of the stats each phone shares.
+export const COOP_MISSIONS = [
+  { id: 'coins', key: 'c', text: (n) => `Collect ${n} coins together`, goals: [120, 200, 320] },
+  { id: 'dist', key: 'd', text: (n) => `Run ${n.toLocaleString()} m as a team`, goals: [2500, 4500, 8000] },
+  { id: 'jumps', key: 'j', text: (n) => `Jump ${n} times together`, goals: [40, 80, 140] },
+  { id: 'rolls', key: 'r', text: (n) => `Roll ${n} times together`, goals: [25, 50, 90] },
+  { id: 'boulders', key: 'b', text: (n) => `Dodge ${n} boulders together`, goals: [2, 3, 5] },
+  { id: 'power', key: 'p', text: (n) => `Grab ${n} power-ups together`, goals: [5, 9, 15] },
+  { id: 'help', key: 'h', text: () => 'Revive your buddy with a heart', goals: [1, 1, 1] },
+  { id: 'score', key: 'sc', text: (n) => `Reach a team score of ${n.toLocaleString()}`, goals: [20000, 40000, 80000] },
+];
+export const COOP_REWARD = 120, COOP_ALL_BONUS = 250;
+export const CAR = { score: 25000, repeat: 60000, time: 120 };

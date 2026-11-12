@@ -185,3 +185,30 @@ body.wide .logo span, body.wide .logo em { margin-left: 0; }
 .coderow { display: flex; gap: 8px; align-items: center; }
 .coderow code { flex: 1; min-width: 0; padding: 0.55em 0.7em; border-radius: 10px; background: rgba(20, 60, 50, 0.08); font-size: 0.78rem; overflow: hidden; text-overflow: ellipsis; user-select: all; -webkit-user-select: all; }
 
+
+/* ---------- play together ---------- */
+.btn.big { font-size: 1.15rem; padding: 0.8em 2em; }
+.or { color: var(--dim); font-weight: 700; margin: 10px 0 6px; letter-spacing: 0.1em; text-transform: uppercase; font-size: 0.75rem; }
+.codefield { text-align: center; text-transform: uppercase; letter-spacing: 0.4em; font-size: 1.3rem; font-weight: 900; max-width: 9em; }
+.bigcode { font: 900 clamp(3rem, 14vw, 5rem)/1 var(--serif); letter-spacing: 0.25em; padding-left: 0.25em; color: #0f3a2c; text-shadow: 0 0 20px rgba(255, 180, 0, 0.5); user-select: all; -webkit-user-select: all; margin: 4px 0; }
+.players { display: flex; flex-direction: column; gap: 6px; margin: 10px 0; width: 100%; max-width: 320px; }
+.players div { display: flex; justify-content: space-between; padding: 8px 14px; border-radius: 12px; background: rgba(20, 60, 50, 0.07); font-weight: 800; }
+.players .host { color: #c77500; font-size: 0.75rem; letter-spacing: 0.1em; text-transform: uppercase; align-self: center; }
+.players .wait { color: var(--dim); font-style: italic; }
+.err { color: #b3001b; font-weight: 700; min-height: 1.2em; margin: 6px 0; }
+#lobby .btn { margin-top: 6px; }
+#coopHud { position: absolute; top: calc(var(--safe-t) + 10px); left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 6px; pointer-events: none; max-width: 46vw; }
+#coopCard { padding: 0.35em 0.9em; border-radius: 14px; background: rgba(255, 255, 255, 0.92); border: 2px solid #3aa8ff; box-shadow: 0 3px 10px rgba(20, 60, 90, 0.3); font-weight: 800; font-size: 0.8rem; text-align: center; line-height: 1.25; }
+#coopCard.down { border-color: var(--red); } #coopCard small { display: block; color: var(--dim); font-weight: 700; }
+#coopMissions { display: flex; flex-direction: column; gap: 3px; width: 100%; }
+#coopMissions .cm { padding: 3px 9px; border-radius: 10px; background: rgba(255, 255, 255, 0.86); font-size: 0.68rem; font-weight: 800; position: relative; overflow: hidden; }
+#coopMissions .cm i { position: absolute; left: 0; top: 0; bottom: 0; background: rgba(10, 168, 143, 0.28); }
+#coopMissions .cm span { position: relative; } #coopMissions .cm.done { color: #07705e; }
+#downBanner { position: absolute; left: 50%; top: 42%; transform: translateX(-50%); width: min(86vw, 360px); text-align: center; padding: 14px 18px; border-radius: 18px; background: rgba(255, 255, 255, 0.95); border: 3px solid var(--red); box-shadow: 0 8px 24px rgba(20, 60, 90, 0.4); display: flex; flex-direction: column; gap: 4px; animation: turnPulse 1.4s ease-in-out infinite; }
+#downBanner b { font: 900 1.6rem var(--serif); color: #b3001b; } #downBanner span { font-weight: 700; color: var(--text); font-size: 0.9rem; }
+@keyframes turnPulse { 50% { transform: translateX(-50%) scale(1.04); } }
+.teamscore { font: 900 clamp(3rem, 12vw, 5rem)/1 var(--serif); color: #0f3a2c; text-shadow: 0 0 20px rgba(255, 180, 0, 0.5); font-variant-numeric: tabular-nums; margin: 4px 0; }
+#coMissions .gm { margin-top: 6px; padding: 8px 12px; border-radius: 10px; border: 1px solid rgba(20, 60, 50, 0.2); font-weight: 700; font-size: 0.9rem; text-align: left; }
+#coMissions .gm.ok { border-color: var(--teal); color: #07705e; background: rgba(10, 168, 143, 0.1); }
+#coPlayers div b small { display: block; color: var(--dim); font-size: 0.6rem; }
+@media (max-width: 560px) { #coopHud { max-width: 52vw; } #coopCard { font-size: 0.7rem; } }

@@ -1,7 +1,7 @@
 // Endless procedural labyrinth corridor, obstacle patterns, coins and pick-ups.
 // Track coordinate `s` grows along the path. Objects live in their leg's frame (see track.js); only `root` moves each frame.
 import * as THREE from 'three';
-import { LANES, SEG_LEN, VIEW_AHEAD, KEEP_BEHIND, BIOME_LEN, BIOMES, CORRIDOR_HALF, PLAYER, POWERUPS } from './config.js';
+import { LANES, SEG_LEN, VIEW_AHEAD, KEEP_BEHIND, BIOME_LEN, BIOMES, CORRIDOR_HALF, PLAYER, POWERUPS, SPEED } from './config.js';
 import * as M from './models.js';
 import { Track, CORNER_HALF } from './track.js';
 
@@ -12,6 +12,9 @@ export function mulberry(seed) {
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 export const biomeIndexAt = (s) => Math.floor(Math.max(0, s) / BIOME_LEN);
 export const biomeAt = (s) => BIOMES[biomeIndexAt(s) % BIOMES.length];
+
+/** Expected running speed at track position s. The maze layout may only depend on distance, never on live play, so two phones generate identical mazes. */
+export const estSpeed = (s) => Math.min(SPEED.max, Math.sqrt(SPEED.start * SPEED.start + 2 * SPEED.accel * Math.max(0, s)));
 
 const BLOCK_H = 1.45, RAMP_LEN = 5.5, WALL_H = 4.4;
 const COIN_CAP = 420;
@@ -482,7 +485,7 @@ export class World {
       if (c.s - 36 < s + 26 && c.s + 16 > s) { this.spawnS = c.s + 16; this.prev = { s: this.spawnS, lane: this.path, type: null }; this.prevOcc = [true, true, true]; this.busy = [-1e9, -1e9, -1e9]; return; }
     }
     const R = this.rand, diff = clamp(s / 7000, 0, 1);
-    const gap = clamp(this.speedHint * 0.95 + 9 - diff * 2, 18, 48) + R() * 8;
+    const gap = clamp(estSpeed(s) * 0.95 + 9 - diff * 2, 18, 48) + R() * 8;
 
     // guide lane: where the coin trail leads (always left free)
     const cands = [];
@@ -564,10 +567,10 @@ export class World {
     this.sincePickup += gap; this.sinceJet += gap;
     const pickS = s + gap * 0.5, nearCorner = this.track.corners.some((c) => Math.abs(c.s - pickS) < 14);
     if (nearCorner) { /* keep the junction clear */ }
-    else if (!this.flying && s > 250 && this.sinceJet > 3200 && R() < 0.4) {          // jetpacks are rare: roughly once per 3+ km
+    else if (s > 250 && this.sinceJet > 3200 && R() < 0.4) {          // jetpacks are rare: roughly once per 3+ km
       this.addPickup('jetpack', newPath, s + gap * 0.5);
       this.sinceJet = 0; this.sincePickup = 0;
-    } else if (!this.flying && s > 250 && this.sincePickup > 650 && R() < 0.4) {
+    } else if (s > 250 && this.sincePickup > 650 && R() < 0.4) {
       const bag = ['magnet', 'magnet', 'double', 'double', 'boots', 'boots', 'wings', 'shield', 'shield'];
       this.addPickup(bag[Math.floor(R() * bag.length)], newPath, s + gap * 0.5);
       this.sincePickup = 0;

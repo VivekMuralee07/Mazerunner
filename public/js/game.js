@@ -20,14 +20,14 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
 const damp = (k, dt) => 1 - Math.exp(-k * dt);
 
-export const STATE = { LOADING: 'loading', MENU: 'menu', COUNTDOWN: 'countdown', RUNNING: 'running', PAUSED: 'paused', DYING: 'dying', OVER: 'over' };
+export const STATE = { LOADING: 'loading', MENU: 'menu', COUNTDOWN: 'countdown', RUNNING: 'running', PAUSED: 'paused', DYING: 'dying', DOWN: 'down', OVER: 'over' };
 
 export class Game {
   constructor(canvas, ui) {
     this.canvas = canvas; this.ui = ui;
     this.state = STATE.LOADING;
     this.time = 0; this.dist = 0; this.speed = 0;
-    this.quality = 'high'; this.fpsAcc = 0; this.fpsN = 0; this.lowFpsT = 0;
+    this.coop = null; this.quality = 'high'; this.fpsAcc = 0; this.fpsN = 0; this.lowFpsT = 0;
   }
 
   // ------------------------------------------------------------------ setup
@@ -174,16 +174,16 @@ export class Game {
   }
 
   // ------------------------------------------------------------------ run lifecycle
-  resetRun(clearWorld = true) {
+  resetRun(clearWorld = true, seed) {
     const save = Store.get();
     this.dist = 0; this.speed = 0; this.baseSpeed = SPEED.start; this.slowT = 0;
     this.score = 0; this.runCoins = 0; this.banked = 0;
     this.runTime = 0; this.boulderT = 24 + Math.random() * 14; this.boulder = null; this.rumbleT = 0; this.boulderDust = 0;
-    this.stats = { distance: 0, coins: 0, jumps: 0, rolls: 0, powerups: 0, lanes: 0, climbs: 0, score: 0 };
+    this.stats = { distance: 0, coins: 0, jumps: 0, rolls: 0, powerups: 0, lanes: 0, climbs: 0, score: 0, boulders: 0, helped: 0, cars: 0 };
     this.timers = { magnet: 0, double: 0, boots: 0, wings: 0, jetpack: 0 }; this.shield = false;
     this.flyWarn = false; this.revives = 0; this.shake = 0; this.notified = new Set();
     this.dustT = 0; this.stepT = 0; this.growlT = 6;
-    this.world.reset((Math.random() * 1e9) | 0, 0);
+    this.world.reset(seed ?? ((Math.random() * 1e9) | 0), 0);
     this.player.reset(); this.player.idle = true; this.player.setEffects({});
     this.chaser.reset(); this.particles.clear();
     this.mult = 1 + save.rank;
@@ -198,6 +198,16 @@ export class Game {
     this.ui.onPlay();
   }
 
+  /** Start a two-player match on the shared maze seed handed out by the server. */
+  playCoop(seed) {
+    Audio.unlock(); Audio.startMusic();
+    this.resetRun(true, seed); this.autoTurn = false;
+    this.player.idle = false;
+    this.state = STATE.COUNTDOWN; this.countT = 0; this.countShown = 4;
+    this.ui.onPlay();
+    this.coop.begin(seed);
+  }
+
   beginRun() {
     this.state = STATE.RUNNING; this.speed = this.baseSpeed;
     Audio.sfx.go();
@@ -207,7 +217,7 @@ export class Game {
   }
 
   pause() {
-    if (this.state !== STATE.RUNNING) return;
+    if (this.state !== STATE.RUNNING || (this.coop && this.coop.active)) return;          // a shared match can't be paused
     this.state = STATE.PAUSED; Audio.duck(true); this.ui.showPause(true);
   }
   resume() {
@@ -266,9 +276,14 @@ export class Game {
   }
 
   step(dt) {
+    this.stepInner(dt);
+    if (this.coop && this.coop.active && this.state !== STATE.PAUSED) this.coop.update(dt);
+  }
+
+  stepInner(dt) {
     const st = this.state;
     if (st === STATE.PAUSED || st === STATE.LOADING) return;
-    if (st === STATE.MENU || st === STATE.OVER) {
+    if (st === STATE.MENU || st === STATE.OVER || st === STATE.DOWN) {
       this.player.update(dt, this.dist, 0, this.world);
       this.world.update(dt, this.dist, 0, this.time);
       this.chaser.update(dt, 0, 0); this.ambient.update(dt, 1.2, this.time); this.particles.update(dt, 0);
@@ -435,7 +450,7 @@ export class Game {
       }
     }
     if (!b.ghost && b.s1 < this.dist - 1.5 && !b.counted) {
-      b.counted = true; this.score += 250 * this.mult;
+      b.counted = true; this.score += 250 * this.mult; this.stats.boulders++;
       this.ui.toast('Boulder dodged! +250', 'mission');
     }
     if (b.s1 < this.dist - 20 || b.ghost) this.boulder = null;
@@ -461,6 +476,7 @@ export class Game {
     if (this.state === STATE.DYING) return;
     this.state = STATE.DYING; this.deathT = 0; this.cause = cause;
     this.player.die(); this.shake = 1;
+    if (this.coop && this.coop.active) this.coop.onLocalDeath();
     if (cause === 'caught') { this.chaser.state = 'catch'; this.chaser.catchT = 0; Audio.sfx.roar(); }
     Audio.sfx.crash();
     this.ui.flash('rgba(255,20,40,0.5)');
@@ -477,7 +493,11 @@ export class Game {
     this.world.update(dt, this.dist, this.speed, this.time);
     this.chaser.update(dt, 8, this.player.x);
     this.updateFx(dt, this.speed); this.updateAtmosphere(dt);
-    if (this.deathT > 1.5) this.finishRun();
+    if (this.deathT > 1.5) {
+      const co = this.coop;
+      if (co && co.active && co.partner.alive && !co.partner.gone) { this.state = STATE.DOWN; this.ui.showDown(true); }     // your buddy may still revive you
+      else this.finishRun();
+    }
   }
 
   finishRun() {
@@ -494,6 +514,7 @@ export class Game {
     for (const k of ['jumps', 'rolls', 'powerups', 'lanes', 'climbs']) lt[k] += this.stats[k];
     const m = Missions.commit(this.stats);
     Store.save();
+    if (this.coop && this.coop.active) { this.ui.showDown(false); this.ui.showCoopOver({ ...this.coop.results(), newBest, missionsSolo: m }); this.coop.end(); return; }
     this.ui.showGameOver({
       score: Math.floor(this.score), best: save.best, newBest, distance: Math.floor(this.dist), coins: this.runCoins,
       cause: this.cause, missions: m, canRevive: this.revives < 3, reviveCost: this.reviveCost(), wallet: save.coins,
@@ -502,17 +523,25 @@ export class Game {
 
   reviveCost() { return 50 * Math.pow(2, this.revives); }
 
-  revive() {
+  /** Your buddy brought you back (free). The generator state is left alone so both phones keep building the same maze. */
+  coopRevive() {
+    if (this.state !== STATE.DOWN && this.state !== STATE.DYING) return false;
+    this.revive({ free: true }); this.ui.showDown(false); return true;
+  }
+
+  revive(opts = {}) {
     const save = Store.get(), cost = this.reviveCost();
-    if (this.revives >= 3 || save.coins < cost) { Audio.sfx.deny(); return false; }
-    save.coins -= cost; Store.save(); Audio.sfx.buy();
+    if (!opts.free) {
+      if (this.revives >= 3 || save.coins < cost) { Audio.sfx.deny(); return false; }
+      save.coins -= cost; Store.save(); Audio.sfx.buy();
+    }
     this.revives++;
     const p = this.player;
     p.dead = false; p.caught = false; p.model.rotation.set(0, 0, 0); p.model.position.set(0, 0, 0); p.rollT = 0; p.vy = 0;
     p.stumbleT = 0; p.invuln = 3; p.y = 0; p.lane = p.target = 1; p.prevLane = 1; p.x = LANES[1]; p.grounded = true; p.flash = 0;
     this.chaser.state = 'far'; this.chaser.nearT = 0; this.chaser.z = 14;
     this.world.clearRange(this.dist - 6, this.dist + 70); this.world.track.forceTurns(this.dist + 70);
-    this.world.path = 1; this.world.busy = [-1e9, -1e9, -1e9]; this.world.prevOcc = [true, true, true];
+    if (!(this.coop && this.coop.active)) { this.world.path = 1; this.world.busy = [-1e9, -1e9, -1e9]; this.world.prevOcc = [true, true, true]; }
     this.baseSpeed = Math.max(SPEED.start, this.baseSpeed * 0.85); this.speed = 0; this.slowT = 0;
     this.state = STATE.COUNTDOWN; this.countT = 0; this.countShown = 4; this.resuming = true;
     Audio.duck(false);
@@ -557,7 +586,16 @@ export class Game {
     }
   }
 
+  /** A revive heart for a fallen buddy, a little way ahead in your lane (never inside a junction). */
+  spawnHeart() {
+    const w = this.world, p = this.player;
+    let s = this.dist + 70;
+    if (w.track.corners.some((c) => Math.abs(c.s - s) < 16)) s += 40;
+    w.addPickup('heart', p.target, s);
+  }
+
   grant(type, x, y) {
+    if (type === 'heart') { Audio.sfx.power(); this.particles.burst(x, y, 0, 24, 0xff4f8b, 5, 0.7, 0.2, 1); this.coop && this.coop.onHeart(); return; }
     const save = Store.get(), def = POWERUPS[type];
     this.stats.powerups++;
     Audio.sfx.power();
