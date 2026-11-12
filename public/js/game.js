@@ -78,7 +78,7 @@ export class Game {
     this.composer.addPass(this.rays);
     this.composer.addPass(new OutputPass());
     this.grade = new ShaderPass({
-      uniforms: { tDiffuse: { value: null }, res: { value: new THREE.Vector2(1280, 720) }, sat: { value: 1.1 }, contrast: { value: 1.12 }, vig: { value: 0.3 }, warm: { value: 0.012 }, sharp: { value: 0.55 }, ca: { value: 0.0035 }, grain: { value: 0.022 }, time: { value: 0 } },
+      uniforms: { tDiffuse: { value: null }, res: { value: new THREE.Vector2(1280, 720) }, sat: { value: 1.1 }, contrast: { value: 1.12 }, vig: { value: 0.3 }, warm: { value: 0.012 }, sharp: { value: 0.38 }, ca: { value: 0.0018 }, grain: { value: 0.013 }, time: { value: 0 } },
       vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
       fragmentShader: `uniform sampler2D tDiffuse; uniform vec2 res; uniform float sat, contrast, vig, warm, sharp, ca, grain, time; varying vec2 vUv;
         void main(){
@@ -660,7 +660,7 @@ export class Game {
       const v = this.tmpSun || (this.tmpSun = new THREE.Vector3());
       v.copy(this.sunDir).multiplyScalar(400).add(cam.position).project(cam);
       const vis = v.z < 1 ? clamp(1.7 - Math.max(Math.abs(v.x), Math.abs(v.y)), 0, 1) : 0;
-      this.rays.uniforms.sun.value.set(v.x * 0.5 + 0.5, v.y * 0.5 + 0.5); this.rays.uniforms.intensity.value = 0.22 * vis;
+      this.rays.uniforms.sun.value.set(v.x * 0.5 + 0.5, v.y * 0.5 + 0.5); this.rays.uniforms.intensity.value = 0.14 * vis;
     }
     for (const h of this.hills) { h.position.x = cam.position.x; h.position.z = cam.position.z; }
     this.composer.render(dt);

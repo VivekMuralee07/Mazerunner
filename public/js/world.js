@@ -131,7 +131,7 @@ export class World {
 
     // overhead arch + hanging things
     const landmark = Math.round(s0 / SEG_LEN) % 7 === 3 && s0 > 100;
-    if (landmark) this.buildLandmark(g, biome, m, rand, wallH);
+    if (landmark) { this.buildLandmark(g, biome, m, rand, wallH); g.userData.landmark = true; }
     else if (rand() < 0.4) this.buildArch(g, biome, m, rand, wallH);
 
     // banners / hanging flora on walls
