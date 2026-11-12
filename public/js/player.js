@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { LANES, PLAYER, SPEED } from './config.js';
+import { LANES, PLAYER, SPEED, CAR } from './config.js';
 import * as M from './models.js';
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -17,6 +17,7 @@ export class Player {
     this.magRing = new THREE.Mesh(new THREE.TorusGeometry(0.75, 0.04, 6, 32), new THREE.MeshBasicMaterial({ color: 0xff5470, transparent: true, opacity: 0.9, depthWrite: false }));
     this.magRing.rotation.x = Math.PI / 2; this.magRing.visible = false; this.holder.add(this.magRing);
     this.bootGlow = new THREE.Sprite(S.glowSprite(0x37e08a, 0.9)); this.bootGlow.scale.set(1.8, 1.8, 1); this.bootGlow.visible = false; this.holder.add(this.bootGlow);
+    this.carModel = M.buildCar(skin.accent); this.carModel.visible = false; this.holder.add(this.carModel);
     this.setSkin(skin);
     this.reset();
   }
@@ -37,6 +38,7 @@ export class Player {
     this.rollT = 0; this.rollOnLand = false; this.stumbleT = 0; this.invuln = 0;
     this.flying = false; this.flyY = 7.5; this.dead = false; this.deadT = 0; this.caught = false;
     this.boots = false; this.buf = { jump: 0, roll: 0 };
+    this.car = false; this.carX = 0; this.nitro = 0; this.nitroCd = 0; if (this.carModel) this.carModel.visible = false;
     this.phase = 0; this.landSquash = 0; this.laneLean = 0; this.idle = false; this.time = 0;
     this.stepAcc = 0; this.onSlab = false; this.laneAge = 9;
     this.holder.position.set(this.x, 0, 0); this.model.rotation.set(0, 0, 0);
@@ -64,6 +66,7 @@ export class Player {
     this.time += dt; this.laneAge += dt;
     const entered = this.laneAge < 0.22 && this.prevLane !== this.target ? this.target : -1;
     if (this.dead) { this.animateDead(dt); return { events: ev, hits: [] }; }
+    if (this.car) return this.updateCar(dt, dist, speed, world);
     this.invuln = Math.max(0, this.invuln - dt);
     this.stumbleT = Math.max(0, this.stumbleT - dt);
     this.flash = Math.max(0, this.flash - dt);
@@ -112,6 +115,32 @@ export class Player {
     this.onSlab = onTop;
     this.animate(dt, speed);
     return { events: ev, hits: this.flying ? [] : probe.hits };
+  }
+
+  setCar(on) {
+    this.car = on; this.carModel.visible = on; this.model.visible = !on;
+    if (on) { this.carX = this.x; this.y = 0; this.vy = 0; this.grounded = true; this.rollT = 0; this.buf.jump = this.buf.roll = 0; this.nitro = 0; this.nitroCd = 0; this.carModel.userData.glow.material.color.setHex(this.skin.accent); }
+    else { let best = 0; for (let l = 1; l < 3; l++) if (Math.abs(LANES[l] - this.x) < Math.abs(LANES[best] - this.x)) best = l; this.lane = this.target = this.prevLane = best; }
+  }
+
+  /** Driving: free, continuous steering; the car rides over ramps and Game decides what to smash. */
+  updateCar(dt, dist, speed, world) {
+    this.time += dt; this.laneAge += dt;
+    this.invuln = Math.max(0, this.invuln - dt); this.nitro = Math.max(0, this.nitro - dt); this.nitroCd = Math.max(0, this.nitroCd - dt); this.flash = Math.max(0, this.flash - dt);
+    const lim = 3.15, tx = clamp(this.carX, -lim, lim), dx = tx - this.x;
+    this.x += clamp(dx, -CAR.steer * dt, CAR.steer * dt);
+    this.laneLean = lerp(this.laneLean, clamp(dx / 2, -1, 1), clamp(dt * 10, 0, 1));
+    const probe = world.probe(dist, this.x, this.y, CAR.height, -1, -1, CAR.halfWidth);
+    this.y += (probe.ground - this.y) * Math.min(1, dt * 14); if (Math.abs(probe.ground - this.y) < 0.02) this.y = probe.ground;
+    this.vy = 0; this.grounded = true; this.groundH = probe.ground;
+    const c = this.carModel, u = c.userData;
+    for (const w of u.wheels) w.rotation.x -= dt * speed * 1.25;
+    c.rotation.z = -this.laneLean * 0.12; c.rotation.y = -this.laneLean * 0.22; c.position.y = Math.sin(this.time * 28) * 0.012 + (this.nitro > 0 ? 0.03 : 0);
+    u.glow.material.opacity = 0.34 + Math.sin(this.time * 6) * 0.08;
+    this.holder.position.set(this.x, this.y, 0);
+    this.shadow.position.set(this.x, (this.groundH || 0) + 0.03, 0); this.shadow.scale.set(1.9, 1.9, 1); this.shadow.material.opacity = 0.42;
+    this.bubble.visible = false; this.wings.visible = false; this.jet.visible = false;
+    return { events: [], hits: probe.hits };
   }
 
   animate(dt, speed) {
@@ -177,7 +206,7 @@ export class Player {
     if (this.bootGlow.visible) this.bootGlow.position.set(0, 0.1, 0);
     // invulnerability blink / hit flash
     const blink = this.invuln > 0 && !this.flying && Math.floor(t * 18) % 2 === 0;
-    this.model.visible = !blink;
+    this.model.visible = !blink && !this.car;
     for (const m of r.mats) { const acc = m === r.mats[4] || m === r.mats[6]; m.emissive.setHex(this.flash > 0 ? 0xff2200 : (acc ? this.skin.accent : 0x000000)); m.emissiveIntensity = this.flash > 0 ? 0.8 : (acc ? 0.35 : 0); }
   }
 

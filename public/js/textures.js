@@ -275,7 +275,30 @@ function coralWall(S = 512) {
   return { map: c, bump: grayBump(c), emissive: null, bumpScale: 3, rough: 0.8 };
 }
 
+function veinedWall(S = 512) {
+  const rand = rng(88), c = canvas(S), x = c.getContext('2d');
+  const em = canvas(S), ex = em.getContext('2d');
+  x.fillStyle = '#22122c'; x.fillRect(0, 0, S, S); ex.fillStyle = '#000'; ex.fillRect(0, 0, S, S);
+  const tones = ['#2e1a3a', '#1b0f26', '#35203f', '#241631', '#3a1c34'];
+  for (let i = 0; i < 520; i++) {                                         // lumpy, fleshy mottling
+    const px = rand() * S, py = rand() * S, r = 6 + rand() * 26, col = tones[Math.floor(rand() * tones.length)];
+    wrap(S, px, py, r, (wx, wy) => { x.fillStyle = col; x.globalAlpha = 0.55; x.beginPath(); x.ellipse(wx, wy, r, r * (0.5 + rand() * 0.5), rand() * 3, 0, 6.28); x.fill(); });
+  }
+  x.globalAlpha = 1;
+  for (let i = 0; i < 38; i++) {                                          // tendrils creeping over the surface
+    let px = rand() * S, py = rand() * S, a = rand() * 6.28; x.strokeStyle = 'rgba(8,4,14,0.8)'; x.lineWidth = 3 + rand() * 4; x.lineCap = 'round';
+    for (let k = 0; k < 22; k++) { const nx = px + Math.cos(a) * 12, ny = py + Math.sin(a) * 12; for (const ox of [0, -S, S]) for (const oy of [0, -S, S]) { x.beginPath(); x.moveTo(px + ox, py + oy); x.lineTo(nx + ox, ny + oy); x.stroke(); } px = (nx + S) % S; py = (ny + S) % S; a += (rand() - 0.5) * 0.9; }
+  }
+  speckle(x, S, rand, 22, 255, 0);
+  for (let i = 0; i < 12; i++) crack(ex, S, rand, '#ff2a3a', 4.5, 46, 0.18);          // glowing red veins
+  ex.globalCompositeOperation = 'lighter';
+  for (let i = 0; i < 12; i++) crack(ex, S, rand, 'rgba(255,150,120,0.55)', 1.6, 40, 0.15);
+  for (let i = 0; i < 40; i++) { const px = rand() * S, py = rand() * S, r = 2 + rand() * 5; const g = ex.createRadialGradient(px, py, 0, px, py, r * 2.5); g.addColorStop(0, 'rgba(255,70,60,0.9)'); g.addColorStop(1, 'rgba(255,70,60,0)'); ex.fillStyle = g; ex.fillRect(px - r * 3, py - r * 3, r * 6, r * 6); }
+  return { map: c, bump: grayBump(c), emissive: em, bumpScale: 3.6, rough: 0.75 };
+}
+
 const WALLS = {
+  veined: veinedWall,
   hedge: hedgeWall, stone: stoneWall, crystal: crystalWall, basalt: basaltWall, coral: coralWall,
   blossom: (S) => hedgeWall(S, { seed: 31, base: '#3a8a3a', greens: ['#3a9a44', '#4fb457', '#62c86a', '#7bd882', '#2f8a3c'], flowers: ['#ffb3cf', '#ff8fb8', '#ffe0ec', '#ffffff', '#ffa6c6'], flowerN: 520, flowerR: [3, 6] }),
   autumn: (S) => hedgeWall(S, { seed: 41, base: '#8a3f18', greens: ['#e0701a', '#f08a24', '#d44a1a', '#f2b134', '#b8381a', '#c25a1a', '#8aa52a'], flowers: ['#7a1a10'], flowerN: 18 }),
@@ -283,6 +306,7 @@ const WALLS = {
 };
 const FLOORS = {
   cobble: () => cobbleFloor(),
+  ash: () => tileFloor(512, 151, 0x4a3f48, '#171116', '#ff3040', (x, S, rand) => { for (let i = 0; i < 700; i++) { const px = rand() * S, py = rand() * S; x.fillStyle = `rgba(${30 + rand() * 50},${20 + rand() * 30},${30 + rand() * 40},0.4)`; x.beginPath(); x.arc(px, py, 1 + rand() * 4, 0, 6.28); x.fill(); } }),
   pinkpath: () => cobbleFloor(512, { seed: 77, base: '#9c8088', v0: 150, tint: [26, 8, 14], moss: 0, litter: { n: 260, colors: ['#ffc2d8', '#ff9fc2', '#ffe3ee'], r: 7 } }),
   leaflitter: () => cobbleFloor(512, { seed: 79, base: '#5a3f26', v0: 100, tint: [24, 10, -4], moss: 0, litter: { n: 280, colors: ['#e0701a', '#f2a23a', '#c4411a', '#e8c04a'], r: 8 } }),
   mossflag: () => tileFloor(512, 133, 0x7f8f78, '#3f4d3a', null, (x, S, rand) => { for (let i = 0; i < 160; i++) { const px = rand() * S, py = rand() * S, r = 8 + rand() * 24; const g = x.createRadialGradient(px, py, 0, px, py, r); g.addColorStop(0, 'rgba(60,140,60,0.55)'); g.addColorStop(1, 'rgba(60,140,60,0)'); x.fillStyle = g; x.fillRect(px - r, py - r, r * 2, r * 2); } }),
@@ -330,7 +354,7 @@ export function coinTexture() {
 /** Builds and returns {biomeId: {wall, floor, trim}} materials and the shared utility textures. */
 export function buildBiomeMaterials(biomes, maxAniso = 4, onProgress) {
   const out = {};
-  const GLOSS = { hedge: 0.12, blossom: 0.25, stone: 0.2, autumn: 0.12, crystal: 0.7, jungle: 0.4, lava: 0.45, coral: 0.7 };
+  const GLOSS = { hollow: 0.35, hedge: 0.12, blossom: 0.25, stone: 0.2, autumn: 0.12, crystal: 0.7, jungle: 0.4, lava: 0.45, coral: 0.7 };
   const mk = (spec, color, emissiveColor, emissiveIntensity = 1.4, gloss = 0) => {
     const tex = (cv, srgb) => {
       if (!cv) return null;
@@ -354,7 +378,7 @@ export function buildBiomeMaterials(biomes, maxAniso = 4, onProgress) {
     cacheF[b.floor] = cacheF[b.floor] || FLOORS[b.floor]();
     const accent = new THREE.Color(b.accent);
     out[b.id] = {
-      wall: mk(cacheW[b.wall], 0xffffff, accent, b.wall === 'crystal' ? 0.7 : 0.9),
+      wall: mk(cacheW[b.wall], 0xffffff, accent, b.wall === 'crystal' ? 0.7 : b.wall === 'veined' ? 1.9 : 0.9),
       floor: mk(cacheF[b.floor], 0xffffff, accent, 0.7, GLOSS[b.id] || 0.2),
       trim: new THREE.MeshStandardMaterial({ map: null, color: b.trim, roughness: 0.85, metalness: 0.1 }),
     };

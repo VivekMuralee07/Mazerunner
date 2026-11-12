@@ -1,7 +1,7 @@
 // Endless procedural labyrinth corridor, obstacle patterns, coins and pick-ups.
 // Track coordinate `s` grows along the path. Objects live in their leg's frame (see track.js); only `root` moves each frame.
 import * as THREE from 'three';
-import { LANES, SEG_LEN, VIEW_AHEAD, KEEP_BEHIND, BIOME_LEN, BIOMES, CORRIDOR_HALF, PLAYER, POWERUPS } from './config.js';
+import { LANES, SEG_LEN, VIEW_AHEAD, KEEP_BEHIND, BIOME_LEN, BIOMES, CORRIDOR_HALF, PLAYER, POWERUPS, SPEED } from './config.js';
 import * as M from './models.js';
 import { Track, CORNER_HALF } from './track.js';
 
@@ -12,6 +12,9 @@ export function mulberry(seed) {
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 export const biomeIndexAt = (s) => Math.floor(Math.max(0, s) / BIOME_LEN);
 export const biomeAt = (s) => BIOMES[biomeIndexAt(s) % BIOMES.length];
+
+/** Expected running speed at track position s. The maze layout may only depend on distance, never on live play, so two phones generate identical mazes. */
+export const estSpeed = (s) => Math.min(SPEED.max, Math.sqrt(SPEED.start * SPEED.start + 2 * SPEED.accel * Math.max(0, s)));
 
 const BLOCK_H = 1.45, RAMP_LEN = 5.5, WALL_H = 4.4;
 const COIN_CAP = 420;
@@ -155,6 +158,7 @@ export class World {
     }
     this.addWallDecor(g, biome, rand, openings);
     this.addScatter(g, biome, rand, openings);
+    if (biome.id === 'hollow') this.addStringLights(g, rand, openings);
     if (rand() < 0.45) {                                   // sun shafts slanting into the corridor
       for (let k = 0; k < 2; k++) {
         const sh = new THREE.Mesh(this.shaftGeo || (this.shaftGeo = new THREE.PlaneGeometry(3.2, 11)), this.shaftMat);
@@ -188,6 +192,10 @@ export class World {
         for (let i = 0; i < 26; i++) { const z = rand() * 24; if (ok(side, z)) items.push({ x: side * (CORRIDOR_HALF - 0.06), y: 0.5 + rand() * 6.3, z: -z, sx: 0.5, sy: (0.7 + rand() * 0.7) * FAM.big, sz: (0.8 + rand() * 0.8) * FAM.big, side }); }
         for (let i = 0; i < 10; i++) { const z = (i + rand() * 0.6) * 2.4; if (ok(side, z)) items.push({ x: side * (CORRIDOR_HALF + 0.8), y: wallH + 0.35, z: -z, sx: 1.5 * FAM.top, sy: (1.1 + rand() * 0.5) * FAM.top, sz: 1.7 * FAM.top, side }); }
       }
+    } else if (biome.id === 'hollow') {
+      geo = D.tendrilGeo || (D.tendrilGeo = new THREE.ConeGeometry(0.3, 1, 5)); mat = D.tendrilMat || (D.tendrilMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.7, flatShading: true }));
+      colors = [0x2a1030, 0x3a1838, 0x1c0f24, 0x4a1a3a, 0x2a0a1a];
+      for (const side of [-1, 1]) for (let i = 0; i < 16; i++) { const z = rand() * 24, h = 1.4 + rand() * 3.2; if (ok(side, z)) items.push({ x: side * (CORRIDOR_HALF + 0.4 + rand() * 0.9), y: wallH + 0.3 + h / 2, z: -z, sx: 0.8 + rand() * 0.9, sy: h, sz: 0.8 + rand() * 0.9, ry: rand() * 6, tilt: (rand() - 0.5) * 0.7 }); }
     } else if (biome.id === 'stone') {
       geo = D.merlonGeo || (D.merlonGeo = new THREE.BoxGeometry(1.1, 0.85, 1.5)); mat = D.merlonMat || (D.merlonMat = new THREE.MeshStandardMaterial({ color: 0xcdb99c, roughness: 0.9 }));
       for (const side of [-1, 1]) for (let i = 0; i < 8; i++) { const z = 0.8 + i * 3; if (ok(side, z)) items.push({ x: side * (CORRIDOR_HALF + 0.8), y: wallH + 0.62, z: -z, sx: 1, sy: 1, sz: 1 }); }
@@ -227,10 +235,12 @@ export class World {
       crystal: { cols: [0xcdeeff, 0xffffff, 0x9fd8ff], s: [0.1, 0.2], sy: 1.8 },
       jungle: { cols: [0xe8452d, 0xf6f0d8, 0xffc23a], s: [0.12, 0.22], sy: 0.7 },
       lava: { cols: [0x6a4a3a, 0x8a5a44, 0xff6a2a], s: [0.12, 0.26], sy: 0.6 },
+      hollow: { cols: [0xff2a3a, 0xaa1a2a, 0xff6a5a, 0x5a1a3a], s: [0.12, 0.3], sy: 1.1, glow: true },
       coral: { cols: [0xffffff, 0xffc2d4, 0xffe3a6, 0xa7eee6], s: [0.1, 0.2], sy: 0.8 },
     }[biome.id];
     if (!SET) return;
-    const geo = D.scatterGeo || (D.scatterGeo = new THREE.IcosahedronGeometry(1, 1)), mat = D.scatterMat || (D.scatterMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.7, flatShading: true }));
+    const geo = D.scatterGeo || (D.scatterGeo = new THREE.IcosahedronGeometry(1, 1));
+    const mat = SET.glow ? (D.podMat || (D.podMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.5, flatShading: true, emissive: 0xff1a2a, emissiveIntensity: 0.9 }))) : (D.scatterMat || (D.scatterMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.7, flatShading: true })));
     const im = new THREE.InstancedMesh(geo, mat, N * 2), d = this.dummy, c = new THREE.Color();
     let n = 0;
     for (const side of [-1, 1]) for (let i = 0; i < N; i++) {
@@ -240,6 +250,26 @@ export class World {
       im.setMatrixAt(n, d.matrix); c.setHex(SET.cols[Math.floor(rand() * SET.cols.length)]); im.setColorAt(n, c); n++;
     }
     im.count = n; im.receiveShadow = true; g.add(im);
+  }
+
+  /** Sagging strings of coloured bulbs along both walls: they flicker like a failing circuit (see World.update). */
+  addStringLights(g, rand, openings) {
+    const D = this.deco, cols = [0xff3040, 0xffb020, 0x3a8cff, 0x40e070, 0xfff0d0, 0xff40c0];
+    const geo = D.bulbGeo || (D.bulbGeo = new THREE.SphereGeometry(0.13, 8, 6)), mat = D.bulbMat || (D.bulbMat = new THREE.MeshBasicMaterial({ color: 0xffffff }));
+    const wire = D.wireMat || (D.wireMat = new THREE.LineBasicMaterial({ color: 0x07030a }));
+    const pts = [], im = new THREE.InstancedMesh(geo, mat, 40), d = this.dummy, c = new THREE.Color(); let n = 0;
+    for (const side of [-1, 1]) {
+      const line = [];
+      for (let z = 0; z <= SEG_LEN + 1e-6; z += 0.8) {
+        const f = (z % 12) / 12, y = 6.1 - 0.95 * Math.sin(Math.PI * f), x = side * (CORRIDOR_HALF - 0.12);
+        line.push(new THREE.Vector3(x, y, -z));
+        if (Math.abs(z % 1.6) < 1e-6 && n < 40 && (openings[side] == null || z < openings[side] - 0.5 || z > openings[side] + 4.9)) {
+          d.position.set(x - side * 0.05, y - 0.14, -z); d.rotation.set(0, 0, 0); d.scale.setScalar(1); d.updateMatrix(); im.setMatrixAt(n, d.matrix); c.setHex(cols[Math.floor(rand() * cols.length)]); im.setColorAt(n, c); n++;
+        }
+      }
+      const ln = new THREE.Line(new THREE.BufferGeometry().setFromPoints(line), wire); g.add(ln);
+    }
+    im.count = n; g.add(im);
   }
 
   buildAlcove(g, side, oz, gapW, wallH, wallT, biome, m, rand) {
@@ -312,6 +342,12 @@ export class World {
       const ob = this.lmMat(0x3a2a26, { rough: 0.5, metal: 0.4 }); arc(5.6, 0.7, ob);
       const hot = new THREE.Mesh(new THREE.TorusGeometry(5.6, 0.2, 8, 36, Math.PI), this.lmMat(0xff6a1a, { em: 1.6 })); hot.position.set(0, wallH, z + 0.55); g.add(hot);
       for (let i = 1; i < 10; i++) { const a = (i / 10) * Math.PI, h = 1.2 + rand() * 1.6, sp = new THREE.Mesh(new THREE.ConeGeometry(0.4, h, 4), ob); sp.position.set(Math.cos(a) * 5.6, wallH + Math.sin(a) * 5.6 + h * 0.4, z); sp.rotation.z = a - Math.PI / 2; add(sp); }
+    } else if (id === 'hollow') {                                                 // a dark gate with a pulsing red portal
+      const ob = this.lmMat(0x24102c, { rough: 0.6, metal: 0.2 }); arc(5.6, 0.8, ob);
+      const portal = new THREE.Mesh(new THREE.CircleGeometry(5.0, 40, 0, Math.PI), new THREE.MeshBasicMaterial({ color: 0xff2030, transparent: true, opacity: 0.2, side: THREE.DoubleSide, depthWrite: false }));
+      portal.position.set(0, wallH, z); g.add(portal); g.userData.portal = portal;
+      for (let i = 1; i < 12; i++) { const a = (i / 12) * Math.PI, h = 1.6 + rand() * 2.4, sp = new THREE.Mesh(new THREE.ConeGeometry(0.34, h, 5), ob); sp.position.set(Math.cos(a) * 5.6, wallH + Math.sin(a) * 5.6 + h * 0.4, z); sp.rotation.z = a - Math.PI / 2 + (rand() - 0.5) * 0.6; add(sp); }
+      const gl = new THREE.Sprite(S.glowSprite(0xff2a3a, 1)); gl.scale.set(9, 9, 1); gl.position.set(0, wallH + 3.2, z); g.add(gl);
     } else {                                                                      // coral palace: coral arch with pearls
       const cor = this.lmMat(0xff8aa0, { rough: 0.55 }); arc(5.6, 0.6, cor);
       const pearl = this.lmMat(0xfff5ee, { rough: 0.15, metal: 0.1, em: 0.3 });
@@ -358,9 +394,9 @@ export class World {
   }
 
   /** Ground height and collisions for a body at (x, y) of height ph, standing at track position `dist`. */
-  probe(dist, px, py, ph, enteredLane = -1, ownLane = -1) {
+  probe(dist, px, py, ph, enteredLane = -1, ownLane = -1, halfWidth = PLAYER.halfWidth) {
     let ground = 0; const hits = [];
-    const PD = PLAYER.halfDepth, PW = PLAYER.halfWidth;
+    const PD = PLAYER.halfDepth, PW = halfWidth;
     for (const sd of this.solids) {
       if (sd.ghost || sd.ignore || sd.s1 + PD < dist || sd.s0 - PD > dist) continue;
       const dx = Math.abs(px - sd.x);
@@ -482,7 +518,7 @@ export class World {
       if (c.s - 36 < s + 26 && c.s + 16 > s) { this.spawnS = c.s + 16; this.prev = { s: this.spawnS, lane: this.path, type: null }; this.prevOcc = [true, true, true]; this.busy = [-1e9, -1e9, -1e9]; return; }
     }
     const R = this.rand, diff = clamp(s / 7000, 0, 1);
-    const gap = clamp(this.speedHint * 0.95 + 9 - diff * 2, 18, 48) + R() * 8;
+    const gap = clamp(estSpeed(s) * 0.95 + 9 - diff * 2, 18, 48) + R() * 8;
 
     // guide lane: where the coin trail leads (always left free)
     const cands = [];
@@ -564,10 +600,10 @@ export class World {
     this.sincePickup += gap; this.sinceJet += gap;
     const pickS = s + gap * 0.5, nearCorner = this.track.corners.some((c) => Math.abs(c.s - pickS) < 14);
     if (nearCorner) { /* keep the junction clear */ }
-    else if (!this.flying && s > 250 && this.sinceJet > 3200 && R() < 0.4) {          // jetpacks are rare: roughly once per 3+ km
+    else if (s > 250 && this.sinceJet > 3200 && R() < 0.4) {          // jetpacks are rare: roughly once per 3+ km
       this.addPickup('jetpack', newPath, s + gap * 0.5);
       this.sinceJet = 0; this.sincePickup = 0;
-    } else if (!this.flying && s > 250 && this.sincePickup > 650 && R() < 0.4) {
+    } else if (s > 250 && this.sincePickup > 650 && R() < 0.4) {
       const bag = ['magnet', 'magnet', 'double', 'double', 'boots', 'boots', 'wings', 'shield', 'shield'];
       this.addPickup(bag[Math.floor(R() * bag.length)], newPath, s + gap * 0.5);
       this.sincePickup = 0;
@@ -615,6 +651,7 @@ export class World {
 
   update(dt, dist, speed, time) {
     this.dist = dist;
+    if (this.deco.bulbMat) this.deco.bulbMat.color.setScalar(Math.sin(time * 23) * Math.sin(time * 7.3) > 0.25 ? 1 : 0.32 + 0.2 * Math.sin(time * 40));
     this.speedHint = speed;
     const T = this.track;
     T.step(dt);

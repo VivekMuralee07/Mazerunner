@@ -40,6 +40,8 @@ export const POWERUPS = {
   boots:  { name: 'Spring Boots', icon: '👢', color: '#37e08a', base: 9, step: 2.5, desc: 'Jump much higher', cost: [200, 400, 800, 1600, 3200] },
   wings:  { name: 'Wings', icon: '🪽', color: '#6fd6ff', base: 6, step: 1.2, desc: 'Fly over the maze, safely', cost: [300, 600, 1200, 2400, 4800] },
   jetpack: { name: 'Jetpack', icon: '🚀', color: '#ff7a1a', base: 15, step: 0, desc: 'Blast over the maze for 15 seconds, collecting sky coins', cost: [] },
+  car: { name: 'Bonus Car', icon: '🚗', color: '#ff4a5e', base: 120, step: 0, desc: 'Drive a car for 2 minutes', cost: [] },
+  heart: { name: 'Revive Heart', icon: '❤', color: '#ff4f8b', base: 0, step: 0, desc: 'Brings your buddy back', cost: [] },
   shield: { name: 'Spirit Shield', icon: '🛡', color: '#b388ff', base: 0, step: 0, desc: 'Absorbs one crash', cost: [] },
 };
 export const MAX_UPGRADE = 5;
@@ -72,6 +74,10 @@ export const BIOMES = [
     fog: 0xe6c3a0, fogDensity: 0.011, skyTop: 0x5a9ae6, skyBottom: 0xf3d2a8, star: 0,
     ambient: 0xffe9d2, ground: 0xb08a62, ambientI: 0.95, sun: 0xffd9a0, sunI: 2.3, torch: 0xff8a2a, accent: 0xff8a2a,
     wall: 'autumn', floor: 'leaflitter', trim: 0x9a6a3e, mode: [-0.6, 2.6, 0xff9a3a] },
+  { id: 'hollow', name: 'The Hollow Realm',
+    fog: 0x3a1224, fogDensity: 0.0165, skyTop: 0x12041a, skyBottom: 0x6a1c2c, star: 0,
+    ambient: 0x8a6a9a, ground: 0x3a2030, ambientI: 0.62, sun: 0xff7a5a, sunI: 0.95, torch: 0xff2a3a, accent: 0xff2a3a,
+    wall: 'veined', floor: 'ash', trim: 0x3a2030, mode: [0.28, 2.3, 0xff7a6a], storm: true },
   { id: 'crystal', name: 'The Frozen Crystal Gardens',
     fog: 0xbadcec, fogDensity: 0.0115, skyTop: 0x2f86e6, skyBottom: 0xcdeaf8, star: 0,
     ambient: 0xdceeff, ground: 0x93b3c4, ambientI: 1.0, sun: 0xeaf6ff, sunI: 2.1, torch: 0x2ec8ff, accent: 0x18b8e0,
@@ -101,3 +107,17 @@ export const MISSION_TEMPLATES = [
   { id: 'climb',  text: (n) => `Climb onto ${n} stone slabs`,           key: 'climbs',   goals: [4, 8, 14, 22, 32] },
 ];
 export const MAX_MULTIPLIER = 10;
+
+// ---- Co-op (two-player) team missions. Progress = your stat + your buddy's stat. key = field of the stats each phone shares.
+export const COOP_MISSIONS = [
+  { id: 'coins', key: 'c', text: (n) => `Collect ${n} coins together`, goals: [120, 200, 320] },
+  { id: 'dist', key: 'd', text: (n) => `Run ${n.toLocaleString()} m as a team`, goals: [2500, 4500, 8000] },
+  { id: 'jumps', key: 'j', text: (n) => `Jump ${n} times together`, goals: [40, 80, 140] },
+  { id: 'rolls', key: 'r', text: (n) => `Roll ${n} times together`, goals: [25, 50, 90] },
+  { id: 'boulders', key: 'b', text: (n) => `Dodge ${n} boulders together`, goals: [2, 3, 5] },
+  { id: 'power', key: 'p', text: (n) => `Grab ${n} power-ups together`, goals: [5, 9, 15] },
+  { id: 'help', key: 'h', text: () => 'Revive your buddy with a heart', goals: [1, 1, 1] },
+  { id: 'score', key: 'sc', text: (n) => `Reach a team score of ${n.toLocaleString()}`, goals: [20000, 40000, 80000] },
+];
+export const COOP_REWARD = 120, COOP_ALL_BONUS = 250;
+export const CAR = { score: 25000, repeat: 60000, time: 120, speedMul: 1.3, nitroMul: 1.45, nitroTime: 2, nitroCooldown: 5, steer: 12, halfWidth: 0.95, height: 1.4, bonusCoins: 100 };

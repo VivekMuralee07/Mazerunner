@@ -27,6 +27,15 @@ export class UI {
     click('#btnMissions', () => this.openPanel('missionsScreen'));
     click('#btnSettings', () => this.openPanel('settings'));
     click('#btnBoard', () => this.openPanel('board'));
+    click('#btnTogether', () => { this.openPanel('lobby'); this.game.coop.openLobby(); });
+    click('#lobbyCreate', () => this.game.coop.create());
+    click('#lobbyJoin', () => { const code = $('#lobbyCode').value.trim(); if (code.length === 4) this.game.coop.join(code); else this.lobbyError('Enter the 4-letter code your friend sees.'); });
+    $('#lobbyCode').addEventListener('input', (e) => { e.target.value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''); });
+    $('#lobbyCode').addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Enter') $('#lobbyJoin').click(); });
+    click('#lobbyStart', () => this.game.coop.start());
+    click('#lobbyBack', () => { this.game.coop.leave(); this.closePanels(); });
+    click('#coAgain', () => { this.hide('coopOver'); this.show('lobby'); this.lobby(this.game.coop); });
+    click('#coMenu', () => { this.game.coop.leave(); this.hide('coopOver'); this.game.quitToMenu(); });
     $$('.back').forEach((b) => b.addEventListener('click', () => { Audio.sfx.click(); this.closePanels(); }));
     $$('.tab').forEach((t) => t.addEventListener('click', () => { Audio.sfx.click(); this.shopTab = t.dataset.tab; this.renderShop(); }));
     click('#btnPause', () => this.game.pause());
@@ -97,8 +106,8 @@ export class UI {
     $('#menuRank').textContent = `Multiplier ×${s.rank + 1}`;
   }
 
-  showMenu() { this.hud(false); this.hide('gameover'); this.hide('pause'); this.closePanels(); this.refreshMenu(); this.show('menu'); }
-  onPlay() { this.hide('menu'); this.closePanels(); this.hide('gameover'); this.hud(true); $('#tutorial').classList.add('hidden'); this.clearToasts(); this.updateHud(this.game, true); }
+  showMenu() { this.hud(false); this.hide('gameover'); this.hide('pause'); this.hide('lobby'); this.hide('coopOver'); this.closePanels(); this.refreshMenu(); this.show('menu'); }
+  onPlay() { this.hide('menu'); this.hide('lobby'); this.hide('coopOver'); this.closePanels(); this.hide('gameover'); this.hud(true); const co = this.game.coop && this.game.coop.active; $('#coopHud').classList.toggle('hidden', !co); $('#btnPause').classList.toggle('hidden', !!co); this.showDown(false); $('#tutorial').classList.add('hidden'); this.clearToasts(); this.updateHud(this.game, true); }
   onRevive() { this.hide('gameover'); this.hud(true); }
   showPause(on) { on ? this.show('pause') : this.hide('pause'); }
 
@@ -107,8 +116,8 @@ export class UI {
     if (id === 'shop') this.renderShop(); if (id === 'missionsScreen') this.renderMissions(); if (id === 'settings') this.renderSettings(); if (id === 'board') this.renderBoard();
   }
   closePanels() {
-    const was = ['shop', 'missionsScreen', 'settings', 'board'].some((id) => $('#' + id).classList.contains('show'));
-    ['shop', 'missionsScreen', 'settings', 'board'].forEach((id) => this.hide(id));
+    const was = ['shop', 'missionsScreen', 'settings', 'board', 'lobby'].some((id) => $('#' + id).classList.contains('show'));
+    ['shop', 'missionsScreen', 'settings', 'board', 'lobby'].forEach((id) => this.hide(id));
     if (was) { this.show('menu'); this.refreshMenu(); }
   }
 
@@ -194,6 +203,8 @@ export class UI {
     if (force || coins !== L.coins) { $('#coinCount').textContent = fmt(coins); if (!force) { const c = $('#coins'); c.classList.remove('bump'); void c.offsetWidth; c.classList.add('bump'); } L.coins = coins; }
     if (force || mult !== L.mult) { const m = $('#mult'); m.textContent = `×${mult}`; m.classList.toggle('boost', g.timers && g.timers.double > 0); L.mult = mult; }
     if (force || dist !== L.dist) { $('#dist').textContent = `${fmt(dist)} m`; L.dist = dist; }
+    const nit = $('#nitro'), pl = g.player;
+    if (pl && pl.car) { nit.classList.remove('hidden'); const ready = pl.nitroCd <= 0; nit.textContent = pl.nitro > 0 ? '⚡ NITRO!' : ready ? '⚡ NITRO READY (↑)' : `⚡ ${Math.ceil(pl.nitroCd)}s`; nit.classList.toggle('ready', ready || pl.nitro > 0); } else nit.classList.add('hidden');
     // power-up bars
     const box = $('#powerups');
     const active = [];
@@ -226,6 +237,55 @@ export class UI {
     box.appendChild(t); setTimeout(() => t.remove(), 2400);
   }
   clearToasts() { $('#toasts').innerHTML = ''; for (const [, e] of this.puEls) e.el.remove(); this.puEls.clear(); }
+
+  // ------------------------------------------------------------------ play together
+  lobbyError(msg) { $('#lobbyError').textContent = msg || ''; }
+
+  lobby(co) {
+    const waiting = co.stage === 'waiting' || co.stage === 'ready';
+    $('#lobbyIdle').classList.toggle('hidden', waiting); $('#lobbyWait').classList.toggle('hidden', !waiting);
+    $('#lobbyCreate').disabled = co.stage === 'connecting'; $('#lobbyJoin').disabled = co.stage === 'connecting' || co.stage === 'joining';
+    $('#lobbyJoin').textContent = co.stage === 'joining' ? 'Joining…' : 'Join';
+    this.lobbyError(co.stage === 'connecting' ? 'Connecting…' : co.error);
+    if (!waiting) return;
+    $('#lobbyBigCode').textContent = co.code;
+    const me = co.me().name, peer = co.peer ? co.peer.name : null, host = co.slot === 0;
+    const row = (name, tag, cls = '') => `<div class="${cls}"><span></span>${tag ? `<span class="host">${tag}</span>` : ''}</div>`;
+    const box = $('#lobbyPlayers'); box.innerHTML = '';
+    const add = (name, tag, cls) => { const d = document.createElement('div'); if (cls) d.className = cls; const a = document.createElement('span'); a.textContent = name; d.appendChild(a); if (tag) { const t = document.createElement('span'); t.className = 'host'; t.textContent = tag; d.appendChild(t); } box.appendChild(d); };
+    add(`${host ? me : (peer || 'Host')}`, 'host'); add(host ? (peer || 'Waiting for your friend…') : me, host ? '' : 'you', host && !peer ? 'wait' : '');
+    $('#lobbyStatus').textContent = co.stage === 'ready' ? (host ? 'Your buddy is here. Ready when you are!' : 'Waiting for the host to start…') : 'Share this code with your friend.';
+    $('#lobbyStart').classList.toggle('hidden', !(host && co.stage === 'ready'));
+  }
+
+  coopBegin() { $('#coopHud').classList.remove('hidden'); $('#btnPause').classList.add('hidden'); this.coopHudT = 0; }
+
+  coopHud(co) {
+    const now = performance.now(); if (now - (this.coopHudT || 0) < 200) return; this.coopHudT = now;
+    const P = co.partner, g = co.game, name = co.ghost ? co.ghost.name : 'Buddy';
+    const rel = Math.round(P.dist - g.dist), where = P.gone ? 'left' : (!P.alive ? 'down' : (rel === 0 ? 'beside you' : `${Math.abs(rel)} m ${rel > 0 ? 'ahead' : 'behind'}`));
+    const card = $('#coopCard'); card.classList.toggle('down', !P.alive || P.gone);
+    card.innerHTML = ''; const a = document.createElement('div'); a.textContent = `👥 ${name} · ${where}`; const b = document.createElement('small'); b.textContent = `Team score ${fmt(co.teamScore())}`; card.append(a, b);
+    const box = $('#coopMissions'); if (box.children.length !== co.missions.length) { box.innerHTML = ''; for (let i = 0; i < co.missions.length; i++) { const d = document.createElement('div'); d.className = 'cm'; d.innerHTML = '<i></i><span></span>'; box.appendChild(d); } }
+    co.missions.forEach((m, i) => { const d = box.children[i]; d.classList.toggle('done', m.done); d.firstChild.style.width = `${Math.round((m.progress / m.goal) * 100)}%`; d.lastChild.textContent = `${m.done ? '✔ ' : ''}${m.text} (${fmt(m.progress)}/${fmt(m.goal)})`; });
+  }
+
+  showDown(on) { $('#downBanner').classList.toggle('hidden', !on); }
+
+  showCoopOver(r) {
+    this.hud(false); $('#coopHud').classList.add('hidden');
+    $('#coTeam').textContent = fmt(r.team); $('#coBest').classList.toggle('hidden', !r.newBest);
+    const P = $('#coPlayers'); P.innerHTML = '';
+    for (const [who, d] of [['You', r.me], [r.buddy.name, r.buddy]]) {
+      const el = document.createElement('div'); const small = document.createElement('small'); small.textContent = who === 'You' ? d.name : (d.gone ? 'left early' : 'buddy');
+      const b = document.createElement('b'); b.textContent = fmt(d.score); const l = document.createElement('small'); l.textContent = `${fmt(d.dist)} m · ${fmt(d.coins)} coins`;
+      const t = document.createElement('small'); t.textContent = who; el.append(t, b, l); P.appendChild(el);
+    }
+    const M = $('#coMissions'); M.innerHTML = '';
+    for (const m of r.missions) { const d = document.createElement('div'); d.className = 'gm' + (m.done ? ' ok' : ''); d.textContent = `${m.done ? '✔' : '✗'} ${m.text} (${fmt(m.progress)}/${fmt(m.goal)})`; M.appendChild(d); }
+    if (r.reward) { const d = document.createElement('div'); d.className = 'gm ok'; d.textContent = `Team reward: +${fmt(r.reward)} coins each`; M.appendChild(d); }
+    this.show('coopOver');
+  }
 
   flash(color) { const f = $('#flash'); f.style.transition = 'none'; f.style.background = color; f.style.opacity = 1; void f.offsetWidth; f.style.transition = 'opacity .45s ease-out'; f.style.opacity = 0; }
 

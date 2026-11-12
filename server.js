@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
 import { fileURLToPath } from 'node:url';
+import { WebSocketServer } from 'ws';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), 'public');
 const PORT = Number(process.env.PORT) || 3000;
@@ -170,6 +171,89 @@ const server = http.createServer((req, res) => {
   if (file !== ROOT && !file.startsWith(ROOT + path.sep)) return notFound(res); // path traversal guard
   serveFile(req, res, file);
 });
+
+// ---------------------------------------------------------------- multiplayer rooms (WebSocket, 2 players per room)
+// The server only matchmakes and relays: every phone simulates its own runner on the same seeded maze.
+const ROOMS = new Map();                                   // code -> room
+const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';   // no 0/O/1/I/L lookalikes
+const MAX_ROOMS = 2000, ROOM_IDLE_MS = 30 * 60 * 1000;
+const wsSend = (ws, obj) => { if (ws.readyState === 1) ws.send(JSON.stringify(obj)); };
+const newCode = () => { for (let n = 0; n < 50; n++) { let c = ''; for (let i = 0; i < 4; i++) c += CODE_ALPHABET[Math.floor(Math.random() * CODE_ALPHABET.length)]; if (!ROOMS.has(c)) return c; } return null; };
+
+function leaveRoom(ws) {
+  const room = ws.room; if (!room) return;
+  ws.room = null;
+  room.players = room.players.filter((p) => p !== ws);
+  for (const p of room.players) { wsSend(p, { t: 'peerLeft' }); p.slot = 0; }               // the remaining player becomes the host
+  if (!room.players.length) ROOMS.delete(room.code); else room.state = 'lobby';
+}
+
+function handleMessage(ws, msg) {
+  const room = ws.room;
+  switch (msg.t) {
+    case 'create': {
+      if (room) leaveRoom(ws);
+      if (ROOMS.size >= MAX_ROOMS) return wsSend(ws, { t: 'error', msg: 'The server is busy right now. Try again in a minute.' });
+      const code = newCode(); if (!code) return wsSend(ws, { t: 'error', msg: 'Could not create a room.' });
+      ws.name = cleanName(msg.name) || 'Runner'; ws.skin = String(msg.skin || '').slice(0, 24);
+      const r = { code, players: [ws], state: 'lobby', seed: 0, last: Date.now() };
+      ROOMS.set(code, r); ws.room = r; ws.slot = 0;
+      return wsSend(ws, { t: 'created', code, you: 0, name: ws.name });
+    }
+    case 'join': {
+      if (room) leaveRoom(ws);
+      const code = String(msg.code || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4);
+      const r = ROOMS.get(code);
+      if (!r) return wsSend(ws, { t: 'error', msg: 'No room with that code.' });
+      if (r.players.length >= 2) return wsSend(ws, { t: 'error', msg: 'That room is already full.' });
+      if (r.state === 'playing') return wsSend(ws, { t: 'error', msg: 'That match has already started.' });
+      ws.name = cleanName(msg.name) || 'Runner'; ws.skin = String(msg.skin || '').slice(0, 24);
+      r.players.push(ws); ws.room = r; ws.slot = 1; r.last = Date.now();
+      const host = r.players[0];
+      wsSend(ws, { t: 'joined', code, you: 1, name: ws.name, peer: { name: host.name, skin: host.skin } });
+      return wsSend(host, { t: 'peer', peer: { name: ws.name, skin: ws.skin } });
+    }
+    case 'start': {
+      if (!room || ws.slot !== 0 || room.players.length < 2) return;
+      room.state = 'playing'; room.seed = (Math.random() * 1e9) | 0; room.last = Date.now();
+      for (const p of room.players) wsSend(p, { t: 'go', seed: room.seed });
+      return;
+    }
+    case 'state': case 'event': {                          // relay to the other player untouched (size-capped by maxPayload)
+      if (!room) return;
+      room.last = Date.now();
+      for (const p of room.players) if (p !== ws) wsSend(p, { ...msg, from: ws.slot });
+      return;
+    }
+    case 'over': { if (room) { room.state = 'lobby'; room.last = Date.now(); } return; }
+    case 'leave': return leaveRoom(ws);
+    case 'ping': return wsSend(ws, { t: 'pong' });
+    default: return;
+  }
+}
+
+const wss = new WebSocketServer({ noServer: true, maxPayload: 4096 });
+server.on('upgrade', (req, socket, head) => {
+  let pathname = '';
+  try { pathname = new URL(req.url, 'http://x').pathname; } catch { /* ignore */ }
+  if (pathname !== '/ws' || limited(req)) { socket.write('HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n'); return socket.destroy(); }
+  wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req));
+});
+wss.on('connection', (ws) => {
+  ws.alive = true; ws.room = null; ws.slot = 0; ws.budget = 60; ws.on('pong', () => { ws.alive = true; });
+  ws.on('message', (data) => {
+    if (--ws.budget < 0) return;                                           // ~60 msgs/s burst budget, refilled below
+    let msg; try { msg = JSON.parse(data.toString('utf8')); } catch { return; }
+    if (msg && typeof msg === 'object' && typeof msg.t === 'string') handleMessage(ws, msg);
+  });
+  ws.on('close', () => leaveRoom(ws));
+  ws.on('error', () => leaveRoom(ws));
+});
+setInterval(() => {                                                        // heartbeat, rate-limit refill and idle-room cleanup
+  const now = Date.now();
+  for (const ws of wss.clients) { ws.budget = 60; if (!ws.alive) { ws.terminate(); continue; } ws.alive = false; try { ws.ping(); } catch { /* ignore */ } }
+  for (const [code, r] of ROOMS) if (now - r.last > ROOM_IDLE_MS) { for (const p of r.players) { wsSend(p, { t: 'error', msg: 'The room timed out.' }); p.room = null; } ROOMS.delete(code); }
+}, 1000).unref();
 
 server.listen(PORT, HOST, () => {
   console.log(`Labyrinth Run listening on http://${HOST}:${PORT}`);

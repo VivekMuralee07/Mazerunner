@@ -5,7 +5,7 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 
-import { BIOMES, BIOME_LEN, LANES, SPEED, POWERUPS, SKINS, PLAYER } from './config.js';
+import { BIOMES, BIOME_LEN, LANES, SPEED, POWERUPS, SKINS, PLAYER, CAR } from './config.js';
 import * as Store from './storage.js';
 import * as Audio from './audio.js';
 import * as Missions from './missions.js';
@@ -20,14 +20,14 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
 const damp = (k, dt) => 1 - Math.exp(-k * dt);
 
-export const STATE = { LOADING: 'loading', MENU: 'menu', COUNTDOWN: 'countdown', RUNNING: 'running', PAUSED: 'paused', DYING: 'dying', OVER: 'over' };
+export const STATE = { LOADING: 'loading', MENU: 'menu', COUNTDOWN: 'countdown', RUNNING: 'running', PAUSED: 'paused', DYING: 'dying', DOWN: 'down', OVER: 'over' };
 
 export class Game {
   constructor(canvas, ui) {
     this.canvas = canvas; this.ui = ui;
     this.state = STATE.LOADING;
     this.time = 0; this.dist = 0; this.speed = 0;
-    this.quality = 'high'; this.fpsAcc = 0; this.fpsN = 0; this.lowFpsT = 0;
+    this.coop = null; this.quality = 'high'; this.fpsAcc = 0; this.fpsN = 0; this.lowFpsT = 0;
   }
 
   // ------------------------------------------------------------------ setup
@@ -174,16 +174,17 @@ export class Game {
   }
 
   // ------------------------------------------------------------------ run lifecycle
-  resetRun(clearWorld = true) {
+  resetRun(clearWorld = true, seed) {
     const save = Store.get();
     this.dist = 0; this.speed = 0; this.baseSpeed = SPEED.start; this.slowT = 0;
     this.score = 0; this.runCoins = 0; this.banked = 0;
     this.runTime = 0; this.boulderT = 24 + Math.random() * 14; this.boulder = null; this.rumbleT = 0; this.boulderDust = 0;
-    this.stats = { distance: 0, coins: 0, jumps: 0, rolls: 0, powerups: 0, lanes: 0, climbs: 0, score: 0 };
-    this.timers = { magnet: 0, double: 0, boots: 0, wings: 0, jetpack: 0 }; this.shield = false;
+    this.stats = { distance: 0, coins: 0, jumps: 0, rolls: 0, powerups: 0, lanes: 0, climbs: 0, score: 0, boulders: 0, helped: 0, cars: 0 };
+    this.timers = { magnet: 0, double: 0, boots: 0, wings: 0, jetpack: 0, car: 0 }; this.shield = false;
+    this.carOffer = null; this.nextCarAt = CAR.score; this.realmTarget = 0; this.realm = this.realm || 0; Audio.engine(false); Audio.setMood('normal');
     this.flyWarn = false; this.revives = 0; this.shake = 0; this.notified = new Set();
     this.dustT = 0; this.stepT = 0; this.growlT = 6;
-    this.world.reset((Math.random() * 1e9) | 0, 0);
+    this.world.reset(seed ?? ((Math.random() * 1e9) | 0), 0);
     this.player.reset(); this.player.idle = true; this.player.setEffects({});
     this.chaser.reset(); this.particles.clear();
     this.mult = 1 + save.rank;
@@ -198,6 +199,16 @@ export class Game {
     this.ui.onPlay();
   }
 
+  /** Start a two-player match on the shared maze seed handed out by the server. */
+  playCoop(seed) {
+    Audio.unlock(); Audio.startMusic();
+    this.resetRun(true, seed); this.autoTurn = false;
+    this.player.idle = false;
+    this.state = STATE.COUNTDOWN; this.countT = 0; this.countShown = 4;
+    this.ui.onPlay();
+    this.coop.begin(seed);
+  }
+
   beginRun() {
     this.state = STATE.RUNNING; this.speed = this.baseSpeed;
     Audio.sfx.go();
@@ -207,7 +218,7 @@ export class Game {
   }
 
   pause() {
-    if (this.state !== STATE.RUNNING) return;
+    if (this.state !== STATE.RUNNING || (this.coop && this.coop.active)) return;          // a shared match can't be paused
     this.state = STATE.PAUSED; Audio.duck(true); this.ui.showPause(true);
   }
   resume() {
@@ -221,7 +232,7 @@ export class Game {
   }
 
   // ------------------------------------------------------------------ input
-  action(a) {
+  action(a, src) {
     if (a === 'confirm') return this.ui.onConfirm && this.ui.onConfirm();
     if (a === 'pause') {
       if (this.state === STATE.RUNNING) this.pause(); else if (this.state === STATE.PAUSED) this.resume();
@@ -230,6 +241,12 @@ export class Game {
     if (this.state === STATE.MENU && a === 'touch') return;
     if (this.state !== STATE.RUNNING && this.state !== STATE.COUNTDOWN) return;
     const p = this.player;
+    if (p.car) {                                                                    // driving: swipes steer by dragging; taps/keys nudge; up = nitro, down = horn
+      if (a === 'left' || a === 'right') { if (src !== 'swipe') p.carX += a === 'left' ? -1.6 : 1.6; }
+      else if (a === 'jump' && p.nitroCd <= 0) { p.nitro = CAR.nitroTime; p.nitroCd = CAR.nitroCooldown; Audio.sfx.nitro(); this.shake = Math.max(this.shake, 0.3); this.ui.toast('NITRO!', 'power', '#ffb400'); }
+      else if (a === 'roll') Audio.sfx.horn();
+      return;
+    }
     if ((a === 'left' || a === 'right') && this.state === STATE.RUNNING) {          // at a corner, swiping the way the arrow points turns
       const c = this.world.track.nextCorner(this.dist);
       if (c && !c.executed && c.s - this.dist < 22 && this.dist < c.s + 3.2 && a === (c.dir > 0 ? 'left' : 'right')) { c.accepted = true; return; }
@@ -266,9 +283,14 @@ export class Game {
   }
 
   step(dt) {
+    this.stepInner(dt);
+    if (this.coop && this.coop.active && this.state !== STATE.PAUSED) this.coop.update(dt);
+  }
+
+  stepInner(dt) {
     const st = this.state;
     if (st === STATE.PAUSED || st === STATE.LOADING) return;
-    if (st === STATE.MENU || st === STATE.OVER) {
+    if (st === STATE.MENU || st === STATE.OVER || st === STATE.DOWN) {
       this.player.update(dt, this.dist, 0, this.world);
       this.world.update(dt, this.dist, 0, this.time);
       this.chaser.update(dt, 0, 0); this.ambient.update(dt, 1.2, this.time); this.particles.update(dt, 0);
@@ -305,6 +327,7 @@ export class Game {
     this.slowT = Math.max(0, this.slowT - dt);
     let target = this.baseSpeed * (1 - (1 - SPEED.stumblePenalty) * smooth(0, 1, this.slowT));
     if (p.flying) target *= 1.15;
+    if (p.car) target *= CAR.speedMul * (p.nitro > 0 ? CAR.nitroMul : 1);
     this.speed += (target - this.speed) * damp(5, dt);
     const sp = this.speed, prev = this.dist;
     this.dist += sp * dt; this.runTime += dt;
@@ -313,6 +336,13 @@ export class Game {
     const T = this.timers;
     for (const k of Object.keys(T)) if (T[k] > 0) { T[k] = Math.max(0, T[k] - dt); }
     p.boots = T.boots > 0;
+    if (p.car) {
+      const inp = this.input;
+      if (inp) p.carX += inp.axis() * dt * 9 + inp.takeDrag() * 0.028;
+      p.carX = clamp(p.carX, -3.15, 3.15);
+      Audio.engineSpeed(sp, p.nitro > 0);
+      if (T.car <= 0) this.endCar();
+    }
     if (p.flying && T.wings <= 0 && T.jetpack <= 0) this.endFlight();
     const flyT = Math.max(T.wings, T.jetpack);
     this.flyWarn = flyT > 0 && flyT < 1.5;
@@ -326,6 +356,7 @@ export class Game {
 
     this.updateCorners();
     this.collect(prev, dt);
+    this.updateCarOffer();
     this.chaser.update(dt, sp, p.x);
     this.growlT -= dt;
     if (this.chaser.isNear && this.growlT <= 0) { Audio.sfx.growl(); this.growlT = 2.2; }
@@ -362,6 +393,7 @@ export class Game {
   handleHits(hits) {
     if (!hits.length) return;
     const p = this.player;
+    if (p.car) { for (const h of hits) this.carSmash(h.sd); return; }
     for (const h of hits) {
       const sd = h.sd;
       if (sd.ghost || sd.ignore) continue;
@@ -396,7 +428,7 @@ export class Game {
   updateCorners() {
     const T = this.world.track, p = this.player, c = T.nextCorner(this.dist);
     if (!c || c.executed) return;
-    const auto = p.flying || this.autoTurn;
+    const auto = p.flying || p.car || this.autoTurn;
     if ((c.accepted || auto) && this.dist >= c.s - 1.5) this.doTurn(c);
     else if (this.dist > c.s + 3.2) this.doTurn(c);                                // safety net (shield, invulnerability)
   }
@@ -435,7 +467,7 @@ export class Game {
       }
     }
     if (!b.ghost && b.s1 < this.dist - 1.5 && !b.counted) {
-      b.counted = true; this.score += 250 * this.mult;
+      b.counted = true; this.score += 250 * this.mult; this.stats.boulders++;
       this.ui.toast('Boulder dodged! +250', 'mission');
     }
     if (b.s1 < this.dist - 20 || b.ghost) this.boulder = null;
@@ -461,6 +493,7 @@ export class Game {
     if (this.state === STATE.DYING) return;
     this.state = STATE.DYING; this.deathT = 0; this.cause = cause;
     this.player.die(); this.shake = 1;
+    if (this.coop && this.coop.active) this.coop.onLocalDeath();
     if (cause === 'caught') { this.chaser.state = 'catch'; this.chaser.catchT = 0; Audio.sfx.roar(); }
     Audio.sfx.crash();
     this.ui.flash('rgba(255,20,40,0.5)');
@@ -477,7 +510,11 @@ export class Game {
     this.world.update(dt, this.dist, this.speed, this.time);
     this.chaser.update(dt, 8, this.player.x);
     this.updateFx(dt, this.speed); this.updateAtmosphere(dt);
-    if (this.deathT > 1.5) this.finishRun();
+    if (this.deathT > 1.5) {
+      const co = this.coop;
+      if (co && co.active && co.partner.alive && !co.partner.gone) { this.state = STATE.DOWN; this.ui.showDown(true); }     // your buddy may still revive you
+      else this.finishRun();
+    }
   }
 
   finishRun() {
@@ -494,6 +531,7 @@ export class Game {
     for (const k of ['jumps', 'rolls', 'powerups', 'lanes', 'climbs']) lt[k] += this.stats[k];
     const m = Missions.commit(this.stats);
     Store.save();
+    if (this.coop && this.coop.active) { this.ui.showDown(false); this.ui.showCoopOver({ ...this.coop.results(), newBest, missionsSolo: m }); this.coop.end(); return; }
     this.ui.showGameOver({
       score: Math.floor(this.score), best: save.best, newBest, distance: Math.floor(this.dist), coins: this.runCoins,
       cause: this.cause, missions: m, canRevive: this.revives < 3, reviveCost: this.reviveCost(), wallet: save.coins,
@@ -502,17 +540,25 @@ export class Game {
 
   reviveCost() { return 50 * Math.pow(2, this.revives); }
 
-  revive() {
+  /** Your buddy brought you back (free). The generator state is left alone so both phones keep building the same maze. */
+  coopRevive() {
+    if (this.state !== STATE.DOWN && this.state !== STATE.DYING) return false;
+    this.revive({ free: true }); this.ui.showDown(false); return true;
+  }
+
+  revive(opts = {}) {
     const save = Store.get(), cost = this.reviveCost();
-    if (this.revives >= 3 || save.coins < cost) { Audio.sfx.deny(); return false; }
-    save.coins -= cost; Store.save(); Audio.sfx.buy();
+    if (!opts.free) {
+      if (this.revives >= 3 || save.coins < cost) { Audio.sfx.deny(); return false; }
+      save.coins -= cost; Store.save(); Audio.sfx.buy();
+    }
     this.revives++;
     const p = this.player;
     p.dead = false; p.caught = false; p.model.rotation.set(0, 0, 0); p.model.position.set(0, 0, 0); p.rollT = 0; p.vy = 0;
     p.stumbleT = 0; p.invuln = 3; p.y = 0; p.lane = p.target = 1; p.prevLane = 1; p.x = LANES[1]; p.grounded = true; p.flash = 0;
     this.chaser.state = 'far'; this.chaser.nearT = 0; this.chaser.z = 14;
     this.world.clearRange(this.dist - 6, this.dist + 70); this.world.track.forceTurns(this.dist + 70);
-    this.world.path = 1; this.world.busy = [-1e9, -1e9, -1e9]; this.world.prevOcc = [true, true, true];
+    if (!(this.coop && this.coop.active)) { this.world.path = 1; this.world.busy = [-1e9, -1e9, -1e9]; this.world.prevOcc = [true, true, true]; }
     this.baseSpeed = Math.max(SPEED.start, this.baseSpeed * 0.85); this.speed = 0; this.slowT = 0;
     this.state = STATE.COUNTDOWN; this.countT = 0; this.countShown = 4; this.resuming = true;
     Audio.duck(false);
@@ -523,12 +569,12 @@ export class Game {
   // ------------------------------------------------------------------ collectibles
   collect(prevDist, dt) {
     const p = this.player, w = this.world, T = this.timers;
-    const cy = p.y + (p.rollT > 0 ? 0.4 : 0.95);
-    const magnet = T.magnet > 0 || p.flying;
+    const cy = p.y + (p.car ? 0.7 : p.rollT > 0 ? 0.4 : 0.95);
+    const magnet = T.magnet > 0 || p.flying || p.car;
     if (magnet) {
       for (const c of w.coins) {
         const ds = c.s - this.dist;
-        if (ds > -2 && ds < 22 && Math.abs(c.x - p.x) < (p.flying ? 3.4 : 9) && (!p.flying || Math.abs(c.y - cy) < 5)) {
+        if (ds > -2 && ds < 22 && Math.abs(c.x - p.x) < (p.flying ? 3.4 : p.car ? 4.5 : 9) && (!p.flying || Math.abs(c.y - cy) < 5)) {
           const k = damp(p.flying ? 5 : 7, dt);
           c.x += (p.x - c.x) * k; c.y += (cy - c.y) * k; c.s += (this.dist + 0.2 - c.s) * k * 0.9;
         }
@@ -538,7 +584,7 @@ export class Game {
     for (let i = coins.length - 1; i >= 0; i--) {
       const c = coins[i];
       if (c.s < prevDist - 0.6 || c.s > this.dist + 0.7) continue;
-      if (Math.abs(c.x - p.x) < (p.flying ? 1.7 : 0.85) && Math.abs(c.y - cy) < (p.flying ? 3.6 : 1.15)) {
+      if (Math.abs(c.x - p.x) < (p.flying ? 1.7 : p.car ? 1.35 : 0.85) && Math.abs(c.y - cy) < (p.flying ? 3.6 : 1.15)) {
         coins.splice(i, 1);
         this.runCoins++; this.stats.coins = this.runCoins;
         this.score += 10 * this.mult;
@@ -550,14 +596,70 @@ export class Game {
     for (let i = pk.length - 1; i >= 0; i--) {
       const q = pk[i];
       if (q.s < prevDist - 0.8 || q.s > this.dist + 0.9) continue;
-      if (Math.abs(q.x - p.x) < 1.2 && Math.abs(q.y - cy) < 1.6) {
+      if (Math.abs(q.x - p.x) < (q.type === 'car' ? 1.9 : 1.2) && Math.abs(q.y - cy) < 1.6) {
         q.group.removeFromParent(); pk.splice(i, 1);
         this.grant(q.type, q.x, q.y);
       }
     }
   }
 
+  /** Offer the bonus car once the (team) score passes the threshold: a car pick-up appears ahead in your lane. */
+  updateCarOffer() {
+    const p = this.player, w = this.world, score = this.coop && this.coop.active ? this.coop.teamScore() : this.score;
+    if (this.carOffer && (!w.pickups.includes(this.carOffer) || this.carOffer.s < this.dist - 6)) {            // taken, or driven past
+      if (!p.car) { this.nextCarAt = score + 5000; this.ui.toast('You missed the car… another one is coming', 'warn'); }
+      this.carOffer = null;
+    }
+    if (p.car || p.flying || this.carOffer || score < this.nextCarAt) return;
+    let s = this.dist + 75;
+    if (w.track.corners.some((c) => Math.abs(c.s - s) < 22)) s += 50;
+    w.addPickup('car', p.target, s, 1.1); this.carOffer = w.pickups[w.pickups.length - 1];
+    this.ui.toast('🚗 A BONUS CAR! Drive it for 2 minutes', 'power', '#ff4a5e'); Audio.sfx.horn();
+  }
+
+  startCar() {
+    const p = this.player;
+    p.setCar(true); p.flying = false; this.world.flying = false; p.rollT = 0;
+    this.timers.car = CAR.time; this.timers.wings = this.timers.jetpack = 0;
+    this.stats.cars = (this.stats.cars | 0) + 1; this.chaser.reset();
+    this.realmTarget = 1; Audio.setMood('retro'); Audio.engine(true); Audio.sfx.horn();
+    this.particles.burst(p.x, 0.8, 0, 36, 0xffd23f, 6, 0.8, 0.25, 2); this.shake = Math.max(this.shake, 0.5);
+    this.ui.flash('rgba(255,210,80,0.35)'); this.ui.toast('Steer: hold ← → or drag · ↑ nitro · everything in your way gets smashed', 'power', '#ff4a5e');
+  }
+
+  endCar() {
+    const p = this.player;
+    if (!p.car) return;
+    this.timers.car = 0; p.setCar(false); p.invuln = 2.5;
+    this.realmTarget = 0; Audio.setMood('normal'); Audio.engine(false); Audio.sfx.skid();
+    this.runCoins += CAR.bonusCoins; this.stats.coins = this.runCoins; this.nextCarAt = Math.max(this.nextCarAt, (this.coop && this.coop.active ? this.coop.teamScore() : this.score) + CAR.repeat);
+    this.particles.burst(p.x, 0.6, 0, 30, 0xbbbbbb, 4, 1.0, 0.4, 0);
+    this.ui.toast(`Out of fuel! +${CAR.bonusCoins} coins`, 'mission'); this.shake = Math.max(this.shake, 0.4);
+  }
+
+  /** The car ploughs through whatever it hits. */
+  carSmash(sd) {
+    if (sd.ghost || sd.isCornerWall) return;
+    this.world.smash(sd);
+    const boulder = sd.type === 'boulder';
+    this.score += (boulder ? 400 : sd.type === 'block' ? 90 : 60) * this.mult;
+    Audio.sfx.smash(); this.shake = Math.max(this.shake, boulder ? 0.6 : 0.3);
+    this.particles.burst(sd.x, 0.9, 0, boulder ? 40 : 22, boulder ? 0x8a7a6a : 0xffb347, 6, 0.8, 0.28, 8);
+    this.stats.smashed = (this.stats.smashed | 0) + 1;
+  }
+
+  /** A revive heart for a fallen buddy, a little way ahead in your lane (never inside a junction). */
+  spawnHeart() {
+    const w = this.world, p = this.player;
+    let s = this.dist + 70;
+    if (w.track.corners.some((c) => Math.abs(c.s - s) < 16)) s += 40;
+    w.addPickup('heart', p.target, s);
+  }
+
   grant(type, x, y) {
+    if (type === 'heart') { Audio.sfx.power(); this.particles.burst(x, y, 0, 24, 0xff4f8b, 5, 0.7, 0.2, 1); this.coop && this.coop.onHeart(); return; }
+    if (type === 'car') { this.carOffer = null; this.startCar(); return; }
+    if ((type === 'wings' || type === 'jetpack') && this.player.car) { this.score += 400 * this.mult; this.ui.toast('Already flying… on four wheels!', 'power', '#ffb400'); return; }
     const save = Store.get(), def = POWERUPS[type];
     this.stats.powerups++;
     Audio.sfx.power();
@@ -602,20 +704,45 @@ export class Game {
     const bi = Math.floor((d + 40) / BIOME_LEN), nb = (bi + 1) * BIOME_LEN;
     const t = smooth(nb - 230, nb - 40, d);
     const A = BIOMES[bi % BIOMES.length], B = BIOMES[(bi + 1) % BIOMES.length];
-    const c = (k) => new THREE.Color(A[k]).lerp(new THREE.Color(B[k]), t);
+    // the bonus car pulls the whole world into the Hollow Realm: eerie sky, tinted stone, lightning, synth-wave
+    const hi = this.hollowIdx ?? (this.hollowIdx = BIOMES.findIndex((x) => x.id === 'hollow')), H = BIOMES[hi];
+    this.realm = this.realm || 0; this.realmTarget = this.realmTarget || 0;
+    this.realm += (this.realmTarget - this.realm) * damp(1.1, dt); if (Math.abs(this.realmTarget - this.realm) < 0.002) this.realm = this.realmTarget;
+    const R = this.realm;
+    const c = (k) => { const col = new THREE.Color(A[k]).lerp(new THREE.Color(B[k]), t); return R > 0.001 ? col.lerp(new THREE.Color(H[k]), R) : col; };
+    const num = (k) => { const v = A[k] + (B[k] - A[k]) * t; return v + (H[k] - v) * R; };
     const fog = c('fog'); this.scene.fog.color.copy(fog); this.scene.background.copy(fog);
-    this.scene.fog.density = A.fogDensity + (B.fogDensity - A.fogDensity) * t;
+    this.scene.fog.density = num('fogDensity');
     this.sky.material.uniforms.top.value.copy(c('skyTop')); this.sky.material.uniforms.bottom.value.copy(c('skyBottom'));
     this.sky.material.uniforms.stars.value = A.star + (B.star - A.star) * t;
     this.sky.material.uniforms.time.value = this.time;
     this.hemi.color.copy(c('ambient')); this.hemi.groundColor.copy(c('ground'));
-    this.hemi.intensity = A.ambientI + (B.ambientI - A.ambientI) * t;
-    this.sun.color.copy(c('sun')); this.sun.intensity = A.sunI + (B.sunI - A.sunI) * t;
+    this.hemi.intensity = num('ambientI');
+    this.sun.color.copy(c('sun')); this.sun.intensity = num('sunI');
     this.ambient.setColor(c('accent'));
     for (const h of this.hills) h.material.color.copy(fog).lerp(c('skyTop'), h.userData.mix).multiplyScalar(0.93);
     this.dustColor = c('trim').offsetHSL(0, -0.1, -0.1).getHex();
+    // stone, hedges and floors take a purple cast while the realm is up
+    if (Math.abs(R - (this.tintApplied ?? -1)) > 0.01) {
+      this.tintApplied = R; const tint = new THREE.Color(0x8a6aa6);
+      this.tintMats = this.tintMats || Object.values(this.world.BM).flatMap((m) => [m.wall, m.floor, m.trim]);
+      const mul = new THREE.Color(1, 1, 1).lerp(tint, R * 0.5);
+      for (const m of this.tintMats) { if (!m.userData.baseColor) m.userData.baseColor = m.color.clone(); m.color.copy(m.userData.baseColor).multiply(mul); }
+    }
     const idx = t > 0.5 ? (bi + 1) % BIOMES.length : bi % BIOMES.length;
-    if (idx !== this.biomeIdx) { const mode = BIOMES[idx].mode; this.ambient.setMode(mode[0], mode[1], mode[2]); this.biomeIdx = idx; this.ui.onBiome(BIOMES[idx], this.state === STATE.RUNNING && this.dist > 50); }
+    if (idx !== this.biomeIdx) { this.biomeIdx = idx; this.ui.onBiome(BIOMES[idx], this.state === STATE.RUNNING && this.dist > 50); }
+    const modeIdx = R > 0.5 ? hi : idx;
+    if (modeIdx !== this.modeIdx) { this.modeIdx = modeIdx; const mode = BIOMES[modeIdx].mode; this.ambient.setMode(mode[0], mode[1], mode[2]); }
+    // storm: flickering light and the odd lightning strike (in the Hollow Realm and during the car ride)
+    const storm = R > 0.3 || BIOMES[idx].storm;
+    this.lightT = this.lightT ?? 4; this.lightning = this.lightning || 0;
+    if (storm && this.state === STATE.RUNNING) {
+      this.lightT -= dt;
+      if (this.lightT <= 0) { this.lightT = 2.5 + Math.random() * 5.5; this.lightning = 1; this.ui.flash('rgba(235,225,255,0.38)'); setTimeout(() => Audio.sfx.thunder(), 250 + Math.random() * 500); }
+    }
+    this.lightning = Math.max(0, this.lightning - dt * 3.2);
+    if (this.lightning > 0) { this.hemi.intensity += this.lightning * 2.4; this.sun.intensity += this.lightning * 3; this.scene.fog.color.lerp(new THREE.Color(0xffffff), this.lightning * 0.35); this.scene.background.copy(this.scene.fog.color); }
+    if (storm) this.hemi.intensity *= 0.9 + 0.1 * Math.sin(this.time * 31) * Math.sin(this.time * 5.7);
   }
 
   render(dt) {

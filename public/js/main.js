@@ -5,6 +5,7 @@ import * as Audio from './audio.js';
 import * as Store from './storage.js';
 import * as Missions from './missions.js';
 import * as Cloud from './cloud.js';
+import { Coop } from './coop.js';
 
 const ui = new UI();
 // a clicked button must not keep keyboard focus, otherwise Space/Enter would re-trigger it mid-run
@@ -23,8 +24,9 @@ async function boot() {
   if (!webglOk()) { ui.loadError('Your browser does not support WebGL. Please try an up-to-date Chrome, Edge, Firefox or Safari.'); return; }
   const game = new Game(canvas, ui);
   window.__game = game;                    // handy for debugging / automated tests
+  game.coop = new Coop(game, ui);
   ui.bind(game);
-  new Input(canvas, (a) => { Audio.unlock(); game.action(a); });
+  game.input = new Input(canvas, (a, src) => { Audio.unlock(); game.action(a, src); });
   addEventListener('keydown', () => Audio.unlock(), { once: true });
   addEventListener('pointerdown', () => Audio.unlock(), { once: true });
   const msgs = ['Carving the corridors…', 'Lighting the torches…', 'Waking the Minotaur…', 'Ready!'];
