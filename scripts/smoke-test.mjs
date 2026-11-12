@@ -634,9 +634,10 @@ try {
     await B.waitForFunction(() => window.__game.coop.opp && window.__game.coop.opp.kaiju && window.__game.coop.opp.kaiju.live, null, { timeout: 30000 }).catch(() => {});
     check('the rival\'s Godzilla attack is replayed in their half of the split screen', await B.evaluate(() => { const k = window.__game.coop.opp.kaiju; return !!(k && k.live && k.plan.length === 2 && k.plan[1].kind === 'quake'); }));
     await A.evaluate(() => { window.__game.kaiju.dispose(); window.__game.player.invuln = 0; });
+    await B.evaluate(() => { window.__awaySeen = false; window.__goneSeen = false; setInterval(() => { const p = window.__game.coop.partner; if (p.away) window.__awaySeen = true; if (p.gone) window.__goneSeen = true; }, 5); });
     await A.evaluate(() => window.__game.coop.net.ws.close());
-    await B.waitForFunction(() => window.__game.coop.partner.away, null, { timeout: 20000 });
-    check('when a phone drops mid-match the rival sees "reconnecting" instead of a forfeit', await B.evaluate(() => window.__game.coop.partner.away && !window.__game.coop.partner.gone));
+    await B.waitForFunction(() => window.__awaySeen, null, { timeout: 20000 });
+    check('when a phone drops mid-match the rival sees "reconnecting" instead of a forfeit', await B.evaluate(() => window.__awaySeen && !window.__goneSeen));
     await A.waitForFunction(() => window.__game.coop.net && window.__game.coop.net.open && !window.__game.coop.reconnecting, null, { timeout: 30000 });
     await B.waitForFunction(() => !window.__game.coop.partner.away, null, { timeout: 20000 });
     check('the dropped phone reconnects by itself and the match carries on', await A.evaluate(() => window.__game.coop.active && !window.__game.coop.forfeit) && await B.evaluate(() => !window.__game.coop.partner.gone));

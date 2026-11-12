@@ -253,7 +253,7 @@ export function buildQuakeWave(S, len = 3) {
 export function makePlan(R, cur, diff) {
   const pick = (a) => a[Math.floor(R() * a.length)], fire = (f) => ({ kind: 'fire', lanes: [0, 1, 2].filter((l) => l !== f) }), quake = () => ({ kind: 'quake', lanes: [0, 1, 2] });
   const nextFree = (p) => (p === 1 ? pick([0, 2]) : 1);
-  const f1 = pick([0, 1, 2].filter((l) => l !== cur));                           // the first fire wave always burns the lane you are in
+  const f1 = pick([cur - 1, cur + 1].filter((l) => l >= 0 && l <= 2));            // the first fire wave burns the lane you are in; the free lane is one step away
   const v = pick(diff < 0.12 ? ['double', 'double', 'fireQuake'] : ['double', 'fireQuake', 'quakeFire', 'triple', 'triple']);
   if (v === 'fireQuake') return [fire(f1), quake()];
   if (v === 'quakeFire') return [quake(), fire(pick([cur - 1, cur + 1].filter((l) => l >= 0 && l <= 2)))];   // after the jump you stay put, so the free lane is next to you
