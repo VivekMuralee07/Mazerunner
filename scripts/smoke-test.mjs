@@ -535,7 +535,7 @@ try {
     await A.click('#lobbyStart');
     await Promise.all([A, B].map((pg) => pg.waitForFunction(() => window.__game.coop.active && window.__game.state === 'running', null, { timeout: 240000 })));
     check('both phones start the match together', true);
-    const sig = (pg) => pg.evaluate(() => { const g = window.__game; for (let i = 0; i < 400; i++) g.step(1 / 60); return { sol: g.world.solids.filter((x) => !x.isCornerWall).slice(0, 30).map((x) => `${x.type}${x.lane}@${x.s0.toFixed(1)}`).join('|'), n: g.world.solids.length, miss: g.coop.missions.map((m) => m.text).join('|') }; });
+    const sig = (pg) => pg.evaluate(() => { const g = window.__game; g.player.invuln = 1e9; g.boulderT = 1e9; for (let i = 0; i < 400; i++) g.step(1 / 60); return { sol: g.world.solids.filter((x) => !x.isCornerWall).slice(0, 30).map((x) => `${x.type}${x.lane}@${x.s0.toFixed(1)}`).join('|'), n: g.world.solids.length, miss: g.coop.missions.map((m) => m.text).join('|') }; });
     const [sa, sb] = [await sig(A), await sig(B)];
     check('the two phones build an IDENTICAL maze (same obstacles in the same places)', sa.sol === sb.sol && sa.n > 5, sa.sol.slice(0, 50));
     check('the three versus missions are the same on both phones', sa.miss === sb.miss && sa.miss.split('|').length === 3, sa.miss);
