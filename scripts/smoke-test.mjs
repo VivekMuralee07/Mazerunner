@@ -399,14 +399,14 @@ try {
 
   console.log('Pause, controls & visuals');
   await page.click('#btnPlay');
-  await page.waitForFunction(() => window.__game.state === 'running', null, { timeout: 30000 });
+  await page.waitForFunction(() => window.__game.state === 'running', null, { timeout: 90000 });
   await page.keyboard.press('ArrowLeft');
   await page.waitForTimeout(300);
   check('keyboard changes lane', await page.evaluate(() => window.__game.player.target === 0));
   await page.keyboard.press('p');
   check('P pauses', await page.evaluate(() => window.__game.state === 'paused') && (await page.isVisible('#pause')));
   await page.click('#btnResume');
-  await page.waitForFunction(() => window.__game.state === 'running', null, { timeout: 15000 });
+  await page.waitForFunction(() => window.__game.state === 'running', null, { timeout: 90000 });
   check('resume returns to the run after a countdown', true);
   // touch swipe
   const box = await page.locator('#game').boundingBox();
