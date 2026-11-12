@@ -414,7 +414,7 @@ export class World {
     const aoF2 = add(new THREE.Mesh(this.aoWallGeo, this.aoWallMat)); aoF2.scale.x = 2 * H; aoF2.position.set(0, 1.3, -H + 0.03);
     for (const [px, pz] of [[o * 3.7, H - 0.1], [o * 3.7, -H + 0.3], [-o * 3.7, -H + 0.3], [-o * 3.7, H - 0.1]]) add(at(new THREE.Mesh(M.boxGeo(0.7, wallH, 0.9), m.trim), px, wallH / 2, pz)).castShadow = true;
     // sign + floor arrow, both pointing to the open side
-    const sign = add(at(new THREE.Mesh(new THREE.PlaneGeometry(3.4, 3.4), this.signMat), 0, 3.5, -H + 0.04)); if (o < 0) sign.scale.x = -1;
+    const sign = add(at(new THREE.Mesh(new THREE.PlaneGeometry(5.4, 5.4), this.signMat), 0, 4.1, -H + 0.04)); if (o < 0) sign.scale.x = -1;
     const mark = add(at(new THREE.Mesh(new THREE.PlaneGeometry(4.4, 4.4), this.floorArrowMat), 0, 0.035, -0.2)); mark.rotation.x = -Math.PI / 2; if (o < 0) mark.scale.x = -1;
     for (const px of [-2.9, 2.9]) {
       const t = M.buildTorch(S, biome.torch); t.position.set(px, 3, -H + 0.12); add(t);

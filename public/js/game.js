@@ -395,11 +395,10 @@ export class Game {
   /** Corners: execute accepted turns, auto-turn while flying, and never leave the camera facing a wall. */
   updateCorners() {
     const T = this.world.track, p = this.player, c = T.nextCorner(this.dist);
-    if (!c || c.executed) { this.ui.setTurn(0, 0); return; }
+    if (!c || c.executed) return;
     const auto = p.flying || this.autoTurn;
     if ((c.accepted || auto) && this.dist >= c.s - 1.5) this.doTurn(c);
     else if (this.dist > c.s + 3.2) this.doTurn(c);                                // safety net (shield, invulnerability)
-    else this.ui.setTurn(c.dir, c.s - this.dist, c.accepted);
   }
 
   doTurn(c) {
@@ -407,7 +406,6 @@ export class Game {
     Audio.sfx.turn(); this.shake = Math.max(this.shake, 0.18);
     this.stats.turns = (this.stats.turns || 0) + 1;
     this.particles.burst(this.player.x, 0.4, 0, 14, this.dustColor || 0xaa9988, 4, 0.5, 0.3, 2);
-    this.ui.setTurn(0, 0);
   }
 
   /** Random, homing boulder: warns, rolls toward the player's lane, locks on late, flattens anything in its way. */

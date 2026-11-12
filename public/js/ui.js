@@ -227,14 +227,6 @@ export class UI {
   }
   clearToasts() { $('#toasts').innerHTML = ''; for (const [, e] of this.puEls) e.el.remove(); this.puEls.clear(); }
 
-  /** Turn hint: an arrow that pulses as a corner approaches. dir: +1 left, -1 right, 0 none. */
-  setTurn(dir, dist, accepted) {
-    const el = $('#turnHint');
-    if (!dir || dist > 120) { if (this.turnShown) { el.classList.add('hidden'); this.turnShown = false; } return; }
-    if (!this.turnShown) { el.classList.remove('hidden'); this.turnShown = true; }
-    el.dataset.dir = dir > 0 ? 'left' : 'right'; el.classList.toggle('near', dist < 40); el.classList.toggle('ok', !!accepted);
-  }
-
   flash(color) { const f = $('#flash'); f.style.transition = 'none'; f.style.background = color; f.style.opacity = 1; void f.offsetWidth; f.style.transition = 'opacity .45s ease-out'; f.style.opacity = 0; }
 
   onBiome(biome, announce) {
