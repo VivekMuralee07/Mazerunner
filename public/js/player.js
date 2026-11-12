@@ -160,6 +160,7 @@ export class Player {
     this.model.rotation.z = -this.laneLean * 0.32 + clamp(this.bank || 0, -1.2, 1.2) * 0.35;
     this.model.rotation.y = -this.laneLean * 0.5;
     r.scarf.update(t, speed, this.laneLean, this.grounded);
+    r.cape.update(t, speed, this.laneLean, this.grounded);
 
     // effect props
     this.holder.position.set(this.x, this.y, 0);

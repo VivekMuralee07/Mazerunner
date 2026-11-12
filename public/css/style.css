@@ -185,14 +185,10 @@ body.wide .logo span, body.wide .logo em { margin-left: 0; }
 .coderow { display: flex; gap: 8px; align-items: center; }
 .coderow code { flex: 1; min-width: 0; padding: 0.55em 0.7em; border-radius: 10px; background: rgba(20, 60, 50, 0.08); font-size: 0.78rem; overflow: hidden; text-overflow: ellipsis; user-select: all; -webkit-user-select: all; }
 
-/* turn hint */
-#turnHint { position: absolute; top: 34%; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 0.4em 1.1em; border-radius: 18px; background: rgba(255, 255, 255, 0.92); border: 3px solid #ff7a1a; box-shadow: 0 6px 18px rgba(20, 60, 90, 0.35); font-weight: 900; color: #b34700; pointer-events: none; }
-#turnHint .arrow { font-size: 2.6rem; line-height: 1; color: #ff7a1a; }
-#turnHint[data-dir="right"] .arrow { transform: scaleX(-1); display: inline-block; }
-#turnHint small { font-size: 0.65rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--dim); }
+/* turn hint: just an arrow */
+#turnHint { position: absolute; top: 36%; left: 50%; transform: translateX(-50%); pointer-events: none; font-weight: 900; }
+#turnHint .arrow { display: inline-block; font-size: 3.4rem; line-height: 1; color: #ff7a1a; text-shadow: 0 0 0 #fff, 2px 2px 0 #fff, -2px -2px 0 #fff, 2px -2px 0 #fff, -2px 2px 0 #fff, 0 6px 14px rgba(20, 60, 90, 0.5); }
+#turnHint[data-dir="right"] .arrow { transform: scaleX(-1); }
 #turnHint.near { animation: turnPulse 0.45s ease-in-out infinite; }
-#turnHint.ok { border-color: var(--teal); } #turnHint.ok .arrow { color: var(--teal); }
-@keyframes turnPulse { 50% { transform: translateX(-50%) scale(1.14); } }
-
-.rankline { margin: 2px 0 6px; padding: 0.3em 0.9em; border-radius: 999px; background: rgba(10, 168, 143, 0.14); color: #07705e; font-weight: 800; font-size: 0.9rem; }
-#nameModal .field { width: 100%; text-align: center; font-size: 1.1rem; margin: 6px 0 4px; flex: none; }
+#turnHint.ok .arrow { color: var(--teal); }
+@keyframes turnPulse { 50% { transform: translateX(-50%) scale(1.18); } }

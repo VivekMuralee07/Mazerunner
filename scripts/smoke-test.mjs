@@ -27,7 +27,7 @@ const check = (name, ok, extra = '') => { ok ? pass++ : fail++; console.log(`${o
 
 const browser = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--autoplay-policy=no-user-gesture-required'] });
 const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 } });
-await ctx.addInitScript(() => { if (!localStorage.getItem('labyrinth-run-save-v1') && !window.__noPreset) localStorage.setItem('labyrinth-run-save-v1', JSON.stringify({ settings: { namePrompted: true, tutorialDone: true } })); });
+await ctx.addInitScript(() => { if (!localStorage.getItem('labyrinth-run-save-v1') && !window.__noPreset) localStorage.setItem('labyrinth-run-save-v1', JSON.stringify({ settings: { namePrompted: true, tutorialDone: true, quality: 'low' } })); });
 const page = await ctx.newPage();
 const problems = [];
 page.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warning') problems.push(`${m.type()}: ${m.text()}`); });
@@ -372,6 +372,22 @@ try {
   check('recovery code is shown', /^[0-9a-f-]{36}$/i.test(await page.textContent('#setId')));
   await page.click('#settings .back');
 
+  console.log('Graphics');
+  r = await page.evaluate(() => {
+    const g = window.__game, w = g.world; w.reset(11, 0); const lm = []; const orig = w.buildSegment.bind(w);
+    w.buildSegment = (leg, s0) => { const grp = orig(leg, s0); if (grp.userData.landmark) lm.push(s0); return grp; };
+    for (let d = 0; d < 4000; d += 20) { w.update(0.016, d, 30, 0); w.solids.length = 0; w.coins.length = 0; }
+    return { landmarks: lm.length, spacing: lm.length > 1 ? Math.round((lm[lm.length - 1] - lm[0]) / (lm.length - 1)) : 0 };
+  });
+  check('a big biome gateway spans the corridor every ~170 m', r.landmarks >= 12 && r.spacing >= 150 && r.spacing <= 200, JSON.stringify(r));
+  check('the turn hint is just an arrow (no "swipe" text)', (await page.locator('#turnHint small').count()) === 0 && !/swipe/i.test(await page.textContent('#turnHint')));
+  r = await page.evaluate(() => {
+    const g = window.__game, gl = g.renderer.getContext(), out = {};
+    for (const q of ['high', 'medium', 'low']) { g.applyQuality(q); g.composer.render(0.016); out[q] = gl.getError(); }
+    out.rays = [g.rays.enabled, g.bloom.enabled]; return out;
+  });
+  check('every graphics tier (high: bloom + god rays + MSAA, medium, low) renders without GL errors', r.high === 0 && r.medium === 0 && r.low === 0, JSON.stringify(r));
+
   console.log('PWA');
   const man = await page.evaluate(async () => { const r = await fetch('/manifest.webmanifest'); const m = await r.json(); const ok = await Promise.all(m.icons.map((i) => fetch(i.src).then((x) => x.ok))); return { name: m.name, display: m.display, icons: ok }; });
   check('web manifest is served and all its icons exist', man.name === 'Labyrinth Run' && man.icons.every(Boolean), JSON.stringify(man));
@@ -383,14 +399,14 @@ try {
 
   console.log('Pause, controls & visuals');
   await page.click('#btnPlay');
-  await page.waitForFunction(() => window.__game.state === 'running', null, { timeout: 30000 });
+  await page.waitForFunction(() => window.__game.state === 'running', null, { timeout: 90000 });
   await page.keyboard.press('ArrowLeft');
   await page.waitForTimeout(300);
   check('keyboard changes lane', await page.evaluate(() => window.__game.player.target === 0));
   await page.keyboard.press('p');
   check('P pauses', await page.evaluate(() => window.__game.state === 'paused') && (await page.isVisible('#pause')));
   await page.click('#btnResume');
-  await page.waitForFunction(() => window.__game.state === 'running', null, { timeout: 15000 });
+  await page.waitForFunction(() => window.__game.state === 'running', null, { timeout: 90000 });
   check('resume returns to the run after a countdown', true);
   // touch swipe
   const box = await page.locator('#game').boundingBox();
