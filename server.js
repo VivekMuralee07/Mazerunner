@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
 import { fileURLToPath } from 'node:url';
+import { randomBytes } from 'node:crypto';
 import { WebSocketServer } from 'ws';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), 'public');
@@ -26,6 +27,18 @@ function flush() {
   try { fs.writeFileSync(tmp, JSON.stringify(db)); fs.renameSync(tmp, DB_FILE); } catch (e) { dirty = true; console.error('could not save player data:', e.message); }
 }
 function scheduleFlush() { if (!dirty) { dirty = true; setTimeout(flush, 1500).unref(); } }
+
+// Daily challenge: one shared seed per UTC day, with its own leaderboard (best score per player per day, last 4 days kept).
+const DAILY_FILE = path.join(DATA_DIR, 'daily.json');
+let daily = {};
+try { daily = JSON.parse(fs.readFileSync(DAILY_FILE, 'utf8')); } catch { /* first run */ }
+let dailyDirty = false;
+function scheduleDailyFlush() {
+  if (dailyDirty) return; dailyDirty = true;
+  setTimeout(() => { dailyDirty = false; try { fs.writeFileSync(`${DAILY_FILE}.tmp`, JSON.stringify(daily)); fs.renameSync(`${DAILY_FILE}.tmp`, DAILY_FILE); } catch (e) { console.error('could not save daily data:', e.message); } }, 1500).unref();
+}
+const utcDay = (offset = 0) => new Date(Date.now() + offset * 86400000).toISOString().slice(0, 10).replace(/-/g, '');
+const validDay = (d) => /^\d{8}$/.test(d) && (d === utcDay() || d === utcDay(-1) || d === utcDay(1));    // tolerate clocks a day off
 
 const hits = new Map();                         // naive per-IP rate limit: 120 API calls / minute
 function limited(req) {
@@ -63,6 +76,29 @@ async function api(req, res, url) {
     const top = all.slice(0, limit).map(([k, v]) => ({ name: v.name || 'Runner', best: v.best, distance: v.distance, me: k === id }));
     const rank = id && UUID.test(id) ? all.findIndex(([k]) => k === id) + 1 : 0;
     return json(res, 200, { top, rank: rank || null, players: all.length });
+  }
+  if (p === '/api/daily') {
+    if (req.method === 'GET') {
+      const date = url.searchParams.get('date') || utcDay(), id = url.searchParams.get('id');
+      if (!/^\d{8}$/.test(date)) return json(res, 400, { error: 'bad date' });
+      const day = daily[date] || {}, all = Object.entries(day).sort((a, b) => b[1].score - a[1].score || b[1].dist - a[1].dist);
+      const rank = id && UUID.test(id) ? all.findIndex(([k]) => k === id.toLowerCase()) + 1 : 0;
+      return json(res, 200, { date, top: all.slice(0, 10).map(([k, v]) => ({ name: v.name, score: v.score, dist: v.dist, me: k === (id || '').toLowerCase() })), rank: rank || null, players: all.length });
+    }
+    if (req.method === 'POST') {
+      let body;
+      try { body = await readBody(req); } catch (e) { return json(res, e.status || 400, { error: e.message }); }
+      const id = String(body.id || '').toLowerCase(), date = String(body.date || '');
+      if (!UUID.test(id) || !validDay(date)) return json(res, 400, { error: 'bad request' });
+      const score = num(body.score, 5e7), dist = num(body.dist, 5e5);
+      const day = daily[date] || (daily[date] = {});
+      if (!day[id] && Object.keys(day).length >= 20000) return json(res, 507, { error: 'full' });
+      if (!day[id] || score > day[id].score) day[id] = { name: cleanName(body.name) || 'Runner', score, dist, at: Date.now() };
+      for (const k of Object.keys(daily).sort().slice(0, -4)) delete daily[k];                  // keep the last 4 days
+      scheduleDailyFlush();
+      const all = Object.entries(day).sort((a, b) => b[1].score - a[1].score || b[1].dist - a[1].dist);
+      return json(res, 200, { ok: true, rank: all.findIndex(([k]) => k === id) + 1, players: all.length, best: day[id].score });
+    }
   }
   const m = p.match(/^\/api\/save\/([^/]+)$/);
   if (m && UUID.test(m[1])) {
@@ -176,16 +212,33 @@ const server = http.createServer((req, res) => {
 // The server only matchmakes and relays: every phone simulates its own runner on the same seeded maze.
 const ROOMS = new Map();                                   // code -> room
 const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';   // no 0/O/1/I/L lookalikes
-const MAX_ROOMS = 2000, ROOM_IDLE_MS = 30 * 60 * 1000;
+const MAX_ROOMS = 2000, ROOM_IDLE_MS = 30 * 60 * 1000, REJOIN_MS = 15000;     // a dropped phone has 15 s to come back mid-match
 const wsSend = (ws, obj) => { if (ws.readyState === 1) ws.send(JSON.stringify(obj)); };
 const newCode = () => { for (let n = 0; n < 50; n++) { let c = ''; for (let i = 0; i < 4; i++) c += CODE_ALPHABET[Math.floor(Math.random() * CODE_ALPHABET.length)]; if (!ROOMS.has(c)) return c; } return null; };
 
 function leaveRoom(ws) {
   const room = ws.room; if (!room) return;
   ws.room = null;
-  room.players = room.players.filter((p) => p !== ws);
+  clearTimeout(ws.awayTimer); ws.away = false;
+  room.players = room.players.filter((p) => p !== ws); room.rematch = null;
   for (const p of room.players) { wsSend(p, { t: 'peerLeft' }); p.slot = 0; }               // the remaining player becomes the host
-  if (!room.players.length) ROOMS.delete(room.code); else room.state = 'lobby';
+  if (!room.players.length || room.players.every((p) => p.away)) { for (const p of room.players) clearTimeout(p.awayTimer); ROOMS.delete(room.code); } else room.state = 'lobby';
+}
+
+/** A socket closed. Mid-match the slot is held for REJOIN_MS so a flaky connection does not forfeit the game. */
+function dropped(ws) {
+  const room = ws.room; if (!room || ws.away) return;
+  if (room.state === 'playing' && room.players.length === 2 && ws.sid && room.players.every((p) => p === ws || !p.away)) {
+    ws.away = true; ws.awayTimer = setTimeout(() => leaveRoom(ws), REJOIN_MS);
+    for (const p of room.players) if (p !== ws) wsSend(p, { t: 'peerAway', ms: REJOIN_MS });
+    return;
+  }
+  leaveRoom(ws);
+}
+
+function startMatch(room) {
+  room.state = 'playing'; room.seed = (Math.random() * 1e9) | 0; room.last = Date.now(); room.rematch = null;
+  for (const p of room.players) wsSend(p, { t: 'go', seed: room.seed });
 }
 
 function handleMessage(ws, msg) {
@@ -198,7 +251,8 @@ function handleMessage(ws, msg) {
       ws.name = cleanName(msg.name) || 'Runner'; ws.skin = String(msg.skin || '').slice(0, 24);
       const r = { code, players: [ws], state: 'lobby', seed: 0, last: Date.now() };
       ROOMS.set(code, r); ws.room = r; ws.slot = 0;
-      return wsSend(ws, { t: 'created', code, you: 0, name: ws.name });
+      ws.sid = randomBytes(8).toString('hex');
+      return wsSend(ws, { t: 'created', code, you: 0, name: ws.name, sid: ws.sid });
     }
     case 'join': {
       if (room) leaveRoom(ws);
@@ -210,13 +264,31 @@ function handleMessage(ws, msg) {
       ws.name = cleanName(msg.name) || 'Runner'; ws.skin = String(msg.skin || '').slice(0, 24);
       r.players.push(ws); ws.room = r; ws.slot = 1; r.last = Date.now();
       const host = r.players[0];
-      wsSend(ws, { t: 'joined', code, you: 1, name: ws.name, peer: { name: host.name, skin: host.skin } });
+      ws.sid = randomBytes(8).toString('hex');
+      wsSend(ws, { t: 'joined', code, you: 1, name: ws.name, sid: ws.sid, peer: { name: host.name, skin: host.skin } });
       return wsSend(host, { t: 'peer', peer: { name: ws.name, skin: ws.skin } });
     }
     case 'start': {
       if (!room || ws.slot !== 0 || room.players.length < 2) return;
-      room.state = 'playing'; room.seed = (Math.random() * 1e9) | 0; room.last = Date.now();
-      for (const p of room.players) wsSend(p, { t: 'go', seed: room.seed });
+      return startMatch(room);
+    }
+    case 'rematch': {                                      // both players asked: start a fresh match with a new seed
+      if (!room || room.players.length < 2 || room.players.some((p) => p.away)) return;
+      room.rematch = room.rematch || new Set(); room.rematch.add(ws.slot); room.last = Date.now();
+      if (room.rematch.size >= 2) return startMatch(room);
+      for (const p of room.players) if (p !== ws) wsSend(p, { t: 'rematch' });
+      return;
+    }
+    case 'rejoin': {                                       // a phone that dropped mid-match takes its slot back
+      const r2 = ROOMS.get(String(msg.code || '').toUpperCase().slice(0, 4)), sid = String(msg.sid || '');
+      const old = r2 && r2.players.find((p) => p.sid === sid && p.away);
+      if (!old || !sid) return wsSend(ws, { t: 'error', msg: 'Could not rejoin the match.', fatal: true });
+      clearTimeout(old.awayTimer); old.away = false; old.room = null;
+      Object.assign(ws, { name: old.name, skin: old.skin, sid: old.sid, slot: old.slot, room: r2, away: false });
+      r2.players = r2.players.map((p) => (p === old ? ws : p)); r2.last = Date.now();
+      const peer = r2.players.find((p) => p !== ws);
+      wsSend(ws, { t: 'rejoined', code: r2.code, you: ws.slot, peer: peer ? { name: peer.name, skin: peer.skin } : null });
+      if (peer) wsSend(peer, { t: 'peerBack' });
       return;
     }
     case 'state': case 'event': {                          // relay to the other player untouched (size-capped by maxPayload)
@@ -246,8 +318,8 @@ wss.on('connection', (ws) => {
     let msg; try { msg = JSON.parse(data.toString('utf8')); } catch { return; }
     if (msg && typeof msg === 'object' && typeof msg.t === 'string') handleMessage(ws, msg);
   });
-  ws.on('close', () => leaveRoom(ws));
-  ws.on('error', () => leaveRoom(ws));
+  ws.on('close', () => dropped(ws));
+  ws.on('error', () => dropped(ws));
 });
 setInterval(() => {                                                        // heartbeat, rate-limit refill and idle-room cleanup
   const now = Date.now();

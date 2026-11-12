@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { LANES, SEG_LEN, VIEW_AHEAD, KEEP_BEHIND, BIOME_LEN, BIOMES, CORRIDOR_HALF, PLAYER, POWERUPS, SPEED } from './config.js';
 import * as M from './models.js';
 import { Track, CORNER_HALF } from './track.js';
-import { buildFlameWave } from './kaiju.js';
+import { buildFlameWave, buildQuakeWave } from './kaiju.js';
 
 export function mulberry(seed) {
   let a = seed >>> 0;
@@ -423,10 +423,10 @@ export class World {
     leg.group.add(group); this.solids.push(sd);
     return sd;
   }
-  /** One lane of a blue fire wave from the Godzilla event. Starts disarmed (floor marks only); the creature arms it. Origin is the rear edge. */
-  addFlame(lane, s0, len) {
-    const group = buildFlameWave(this.S, len);
-    const sd = { type: 'flame', lane, x: LANES[lane], s0, s1: s0 + len, len, H: 1.5, ramp: 0, hw: 1.15, group, ghost: true, armed: false, flameSpeed: 38, yBot: 0, yTop: 0 };
+  /** A hazard wave from the Godzilla event: 'fire' (one lane of blue flame) or 'quake' (a shockwave across all lanes). Starts disarmed. Origin is the rear edge. */
+  addFlame(lane, s0, len, kind = 'fire') {
+    const quake = kind === 'quake', group = quake ? buildQuakeWave(this.S, len) : buildFlameWave(this.S, len);
+    const sd = { type: 'flame', kind, lane, x: quake ? 0 : LANES[lane], s0, s1: s0 + len, len, H: quake ? 1.25 : 1.5, ramp: 0, hw: quake ? 3.85 : 1.15, group, ghost: true, armed: false, flameSpeed: quake ? 30 : 38, yBot: 0, yTop: 0 };
     const leg = this.track.legAt(s0); sd.leg = leg;
     group.position.set(sd.x, 0, -(sd.s1 - leg.a)); leg.group.add(group); this.solids.push(sd);
     return sd;

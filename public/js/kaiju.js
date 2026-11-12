@@ -48,7 +48,13 @@ function flameTexture() {                                      // teardrop flame
   return flameTex;
 }
 
-function markTexture() {                                       // blue chevrons painted on the floor in lanes about to burn
+function markTexture(quake) {
+  if (quake) {
+    const c = document.createElement('canvas'); c.width = 64; c.height = 128; const x = c.getContext('2d');
+    x.fillStyle = 'rgba(255,150,30,0.45)'; x.fillRect(0, 0, 64, 128); x.strokeStyle = '#ffe27a'; x.lineWidth = 16;
+    x.beginPath(); x.moveTo(6, 90); x.lineTo(32, 40); x.lineTo(58, 90); x.stroke();                      // chevrons pointing up = JUMP
+    const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace; t.repeat.set(1, 18); return t;
+  }                                       // blue chevrons painted on the floor in lanes about to burn
   if (markTex) return markTex;
   const c = document.createElement('canvas'); c.width = 64; c.height = 128; const x = c.getContext('2d');
   x.fillStyle = 'rgba(30,110,255,0.5)'; x.fillRect(0, 0, 64, 128); x.strokeStyle = '#a8e4ff'; x.lineWidth = 16; x.lineJoin = 'miter';
@@ -209,6 +215,11 @@ export function buildFlameWave(S, len = 5) {
 
 export function animateFlameWave(g, time, armed, ahead) {
   const U = g.userData; U.fire.visible = armed;
+  if (U.quake) {
+    if (armed) { for (const m of U.pieces) m.position.y = m.userData.y0 + Math.abs(Math.sin(time * 9 + m.userData.ph)) * 0.55; for (const s of U.tongues) s.material.opacity = 0.55 + 0.25 * Math.sin(time * 6 + s.position.x); }
+    U.mark.material.opacity = ahead > 1 ? (armed ? 1 : 0.7 + 0.3 * Math.sin(time * 9)) : 0;
+    const k = Math.min(1, Math.max(0.05, ahead / 90)); U.mark.scale.y = k; U.mark.position.z = 45 * k + U.len; return;
+  }
   if (armed) for (const t of U.tongues) {
     const d = t.userData, f = 0.78 + 0.22 * Math.sin(time * d.sp + d.ph) + 0.1 * Math.sin(time * d.sp * 2.3 + d.ph * 2);
     t.scale.set(d.w * (0.9 + 0.2 * Math.sin(time * d.sp * 1.3 + d.ph)), d.h * f, d.w); t.rotation.y += 0.02;
@@ -217,74 +228,129 @@ export function animateFlameWave(g, time, armed, ahead) {
   const k = Math.min(1, Math.max(0.05, ahead / 90)); U.mark.scale.y = k; U.mark.position.z = 45 * k + U.len;
 }
 
+// ---------------------------------------------------------------- shockwave (tail sweep): a rolling ridge of rock and dust across all lanes
+let rockGeo = null;
+export function buildQuakeWave(S, len = 3) {
+  const g = new THREE.Group(), fire = new THREE.Group(), tongues = [];
+  if (!rockGeo) rockGeo = new THREE.DodecahedronGeometry(0.5, 0);
+  const rock = new THREE.MeshStandardMaterial({ color: 0x6d6258, roughness: 0.9, flatShading: true });
+  const pieces = [];
+  for (let i = 0; i < 26; i++) {
+    const m = new THREE.Mesh(rockGeo, rock), sz = rnd(0.5, 1.5);
+    m.scale.set(sz * rnd(0.8, 1.6), sz * rnd(0.7, 1.3), sz); m.position.set(rnd(-3.6, 3.6), sz * 0.3, rnd(0, len)); m.rotation.set(rnd(0, 6), rnd(0, 6), rnd(0, 6)); m.castShadow = true;
+    m.userData = { ph: Math.random() * 6.3, y0: sz * 0.3 }; fire.add(m); pieces.push(m);
+  }
+  const dust = flameMat(0xb9a58a);                       // soft billowing dust, reusing the flame sprite shape
+  for (let i = 0; i < 9; i++) { const sp = new THREE.Sprite(S.glowSprite(0xcbb89a, 1)); sp.scale.set(rnd(3, 5), rnd(2.5, 4), 1); sp.position.set(rnd(-3.2, 3.2), rnd(0.6, 1.6), rnd(0, len)); fire.add(sp); tongues.push(sp); }
+  const mark = new THREE.Mesh(new THREE.PlaneGeometry(7.4, 90), new THREE.MeshBasicMaterial({ map: markTexture(true), transparent: true, depthWrite: false, opacity: 0.8 }));
+  mark.rotation.x = -Math.PI / 2; mark.position.set(0, 0.05, 45 + len); mark.userData.quake = true;
+  fire.visible = false; g.add(fire, mark);
+  g.userData = { tongues, pieces, fire, mark, len, quake: true, dust };
+  return g;
+}
+
+/** Choose what Godzilla does this time (deterministic from `R`): a list of waves, each `{ kind: 'fire', lanes }` or `{ kind: 'quake' }`. */
+export function makePlan(R, cur, diff) {
+  const pick = (a) => a[Math.floor(R() * a.length)], fire = (f) => ({ kind: 'fire', lanes: [0, 1, 2].filter((l) => l !== f) }), quake = () => ({ kind: 'quake', lanes: [0, 1, 2] });
+  const nextFree = (p) => (p === 1 ? pick([0, 2]) : 1);
+  const f1 = pick([cur - 1, cur + 1].filter((l) => l >= 0 && l <= 2));            // the first fire wave burns the lane you are in; the free lane is one step away
+  const v = pick(diff < 0.12 ? ['double', 'double', 'fireQuake'] : ['double', 'fireQuake', 'quakeFire', 'triple', 'triple']);
+  if (v === 'fireQuake') return [fire(f1), quake()];
+  if (v === 'quakeFire') return [quake(), fire(pick([cur - 1, cur + 1].filter((l) => l >= 0 && l <= 2)))];   // after the jump you stay put, so the free lane is next to you
+  if (v === 'triple') { const f2 = nextFree(f1); return [fire(f1), fire(f2), fire(nextFree(f2))]; }
+  return [fire(f1), fire(nextFree(f1))];
+}
+export const encodePlan = (plan) => plan.map((w) => (w.kind === 'quake' ? 'q' : `f${w.lanes.join('')}`));
+export function decodePlan(a) {
+  if (!Array.isArray(a) || a.length < 1 || a.length > 4) return null;
+  const out = []; for (const x of a) {
+    if (x === 'q') out.push({ kind: 'quake', lanes: [0, 1, 2] });
+    else if (typeof x === 'string' && /^f[012]{1,3}$/.test(x)) out.push({ kind: 'fire', lanes: [...new Set(x.slice(1).split('').map(Number))] });
+    else return null;
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------- the event
+const LAUNCH0 = 3.0, GAP = 1.1;          // first wave leaves at 3.0 s, then one every 1.1 s
+
 /**
- * Timeline (s): rise 0-1.5, charge 1.5-3.0 (lanes of the first wave are marked on the floor), wave 1 at 3.0, wave 2 at 4.1,
- * then it turns and strides away. It backs off while breathing so it never walks into the player.
+ * Timeline (s): rise 0-1.5, charge 1.5-3.0 (the first wave's lanes are marked on the floor), waves at 3.0, 4.1, ...
+ * then it turns and strides away. It backs off while attacking so it never walks into the player.
+ * `ctx` is the game (or the opponent view's stand-in): it provides time, dist, shake, ui, state, score, stats and scene.
  */
 export class Kaiju {
   constructor(world, S) { this.world = world; this.S = S; this.model = null; this.live = false; this.waves = []; }
 
-  /** `s` is where it stands; `plan` lists the burning lanes of each wave, e.g. [[0, 2], [1, 2]]. */
+  /** `s` is where it stands; `plan` lists the waves, e.g. [{ kind: 'fire', lanes: [0, 2] }, { kind: 'quake' }]. */
   spawn(s, plan, audio) {
     const w = this.world, leg = w.track.legAt(s);
     if (!this.model) this.model = buildGodzilla(this.S);
     this.leg = leg; this.s = s; this.t = 0; this.phase = 'rise'; this.plan = plan; this.live = true; this.stride = 0; this.turnT = 0;
-    this.audio = audio; this.fired = 0; this.roared = false; this.survived = false; this.thud = false; this.waves = [];
+    this.audio = audio; this.fired = 0; this.roared = false; this.survived = false; this.thud = false; this.waves = []; this.swipe = 0; this.swipeDir = 1; this.lastLaunch = -9;
+    this.leaveAt = LAUNCH0 + GAP * (plan.length - 1) + 1.6;
     this.model.scale.setScalar(SCALE); this.model.position.set(0, -17 * SCALE, -(s - leg.a)); this.model.rotation.y = 0; this.model.userData.jet.visible = false;
     leg.group.add(this.model);
     this.armWaves(0);
   }
 
-  armWaves(i) {                                                   // unarmed waves: the floor marks show, no fire yet
-    for (const l of this.plan[i] || []) { const sd = this.world.addFlame(l, this.s - IMPACT, 5); sd.planIdx = i; this.waves.push(sd); }
+  armWaves(i) {                                                   // unarmed waves: the floor marks show, no hazard yet
+    const p = this.plan[i]; if (!p) return;
+    if (p.kind === 'quake') { const sd = this.world.addFlame(1, this.s - IMPACT, 3, 'quake'); sd.planIdx = i; this.waves.push(sd); }
+    else for (const l of p.lanes) { const sd = this.world.addFlame(l, this.s - IMPACT, 5, 'fire'); sd.planIdx = i; this.waves.push(sd); }
   }
 
-  launch(i) {
+  launch(i, ctx) {
     for (const sd of this.waves) if (sd.planIdx === i) { sd.armed = true; sd.ghost = false; }
-    this.fired = i + 1; this.audio.flame();
-    if (i === 0) this.armWaves(1);
+    this.fired = i + 1; this.lastLaunch = this.t;
+    if (this.plan[i].kind === 'quake') { this.swipe = 1; this.swipeDir = i % 2 ? 1 : -1; this.audio.rumble(); ctx.shake = Math.max(ctx.shake, 0.6); ctx.ui.toast('⚠ SHOCKWAVE! Jump!', 'warn'); }
+    else this.audio.flame();
+    this.armWaves(i + 1);
   }
 
-  update(dt, game) {
+  update(dt, ctx) {
     if (!this.live) return;
-    const U = this.model.userData, time = game.time, dist = game.dist;
+    const U = this.model.userData, time = ctx.time, dist = ctx.dist, N = this.plan.length;
     this.t += dt; const t = this.t, leg = this.leg;
     if (this.phase === 'rise') {
       const k = smooth(t / 1.5); this.model.position.y = -17 * SCALE * (1 - k);
-      game.shake = Math.max(game.shake, 0.08 + 0.2 * (1 - k));
-      if (t >= 1.0 && !this.roared) { this.roared = true; this.audio.kaiju(); game.shake = Math.max(game.shake, 0.55); game.ui.toast('⚠ GODZILLA! Dodge the blue flame', 'warn'); game.ui.flash('rgba(70,140,255,0.28)'); }
+      ctx.shake = Math.max(ctx.shake, 0.08 + 0.2 * (1 - k));
+      if (t >= 1.0 && !this.roared) { this.roared = true; this.audio.kaiju(); ctx.shake = Math.max(ctx.shake, 0.55); ctx.ui.toast('⚠ GODZILLA! Dodge the blue flame', 'warn'); ctx.ui.flash('rgba(70,140,255,0.28)'); }
       if (t >= 1.5) this.phase = 'charge';
-    } else if (this.phase === 'charge') { if (t >= 3.0) { this.phase = 'breathe'; this.launch(0); } }
+    } else if (this.phase === 'charge') { if (t >= LAUNCH0) { this.phase = 'breathe'; this.launch(0, ctx); } }
     else if (this.phase === 'breathe') {
-      if (this.fired === 1 && t >= 4.1) this.launch(1);
-      if (t >= 5.7) { this.phase = 'leave'; this.turnT = 0; }
+      if (this.fired < N && t >= LAUNCH0 + GAP * this.fired) this.launch(this.fired, ctx);
+      if (t >= this.leaveAt) { this.phase = 'leave'; this.turnT = 0; }
     }
-    const breathing = this.phase === 'breathe' ? 1 : 0;
-    if (breathing) this.s += 12 * dt;                                                   // backs away while breathing
+    const attacking = this.phase === 'breathe' ? 1 : 0;
+    if (attacking) this.s += 12 * dt;                                                   // backs away while attacking
     if (this.phase === 'leave') { this.turnT += dt; const k = smooth(this.turnT / 1.2); this.model.rotation.y = Math.PI * k; this.s += 30 * dt * k; }
     this.model.position.z = -(this.s - leg.a);
-    const fogCol = game.scene.fog.color, haze = Math.min(0.5, Math.max(0, (this.s - dist - 40) / 260));       // a little atmospheric perspective
-    for (const m of Object.values(skinMats)) if (m.userData.base && m !== skinMats.eye) m.color.copy(m.userData.base).lerp(fogCol, haze);
+    this.swipe = Math.max(0, this.swipe - dt * 1.7);
     // walk cycle
-    const moving = breathing || this.phase === 'leave';
+    const moving = attacking || this.phase === 'leave';
     this.stride += dt * (moving ? 5.5 : 1.0);
+    const sw = Math.sin(this.swipe * Math.PI) * this.swipeDir;
     U.legs.forEach((lg, i) => { lg.rotation.x = Math.sin(this.stride + (i ? Math.PI : 0)) * (moving ? 0.5 : 0.04); });
     U.body.position.y = Math.abs(Math.sin(this.stride)) * (moving ? 0.35 : 0.06) + Math.sin(time * 1.6) * 0.04;
+    U.body.rotation.y = -0.55 * sw;                                                      // the tail-sweep twist
     U.arms.forEach((a, i) => { a.rotation.x = -0.3 + Math.sin(this.stride * 0.8 + i) * 0.1; });
-    U.tail.forEach((sg, i) => { sg.rotation.y = Math.sin(time * 1.6 - i * 0.55) * (0.1 + i * 0.012) * (moving ? 1.6 : 1); });
+    U.tail.forEach((sg, i) => { sg.rotation.y = Math.sin(time * 1.6 - i * 0.55) * (0.1 + i * 0.012) * (moving ? 1.6 : 1) + sw * (0.35 + i * 0.05); });
     // head, jaw and glow
+    const fireNow = this.fired > 0 && this.plan[this.fired - 1].kind === 'fire' && t - this.lastLaunch < (this.fired < N ? 0.95 : 1.4);
     const charge = smooth((t - 1.5) / 1.5), roar = this.phase === 'rise' && t > 0.9 ? Math.sin(smooth((t - 0.9) / 0.6) * Math.PI) : 0;
-    U.body.rotation.x = this.phase === 'charge' ? -0.12 * charge : breathing ? 0.05 : 0;
-    U.head.rotation.x = -0.35 * roar - 0.25 * charge * (1 - breathing) + 0.28 * breathing;
-    U.jaw.rotation.x = 0.55 * roar + 0.22 * charge + 0.32 * breathing + 0.03 * Math.sin(time * 2);
-    const glow = this.phase === 'leave' ? Math.max(0, 1 - this.turnT * 1.2) : Math.max(charge, breathing), flick = 0.85 + 0.15 * Math.sin(time * 38);
+    const glow = this.phase === 'leave' ? Math.max(0, 1 - this.turnT * 1.2) : this.phase === 'breathe' ? (this.plan.some((w) => w.kind === 'fire') ? 1 : 0.2) : charge;
+    U.body.rotation.x = this.phase === 'charge' ? -0.12 * charge : attacking ? 0.05 : 0;
+    U.head.rotation.x = -0.35 * roar - 0.25 * charge * (1 - attacking) + 0.28 * (fireNow ? 1 : 0.4 * attacking);
+    U.jaw.rotation.x = 0.55 * roar + 0.22 * charge + 0.32 * (fireNow ? 1 : 0.3 * attacking) + 0.03 * Math.sin(time * 2);
+    const flick = 0.85 + 0.15 * Math.sin(time * 38);
     U.plateMat.emissiveIntensity = glow * 3.6 * flick; U.mouthMat.emissiveIntensity = glow * 2.5 * flick;
     U.mouthGlow.scale.setScalar(0.1 + glow * 3.2 * flick); U.mouthGlow.material.opacity = glow * 0.8;
-    // the jet only while a wave is being launched
-    const jetOn = breathing && ((this.fired === 1 && t < 4.1 + 0.15 && t >= 3.0) || (this.fired === 2 && t < 5.5));
-    U.jet.visible = jetOn;
-    if (jetOn) aimJet(U, this.plan[this.fired - 1], flick);
+    const fogCol = ctx.scene.fog.color, haze = Math.min(0.5, Math.max(0, (this.s - dist - 40) / 260));       // a little atmospheric perspective
+    for (const m of Object.values(skinMats)) if (m.userData.base && m !== skinMats.eye) m.color.copy(m.userData.base).lerp(fogCol, haze);
+    // the jet only while a fire wave is being launched
+    U.jet.visible = fireNow;
+    if (fireNow) aimJet(U, this.plan[this.fired - 1].lanes, flick);
     // waves
     for (let i = this.waves.length - 1; i >= 0; i--) {
       const sd = this.waves[i];
@@ -292,10 +358,10 @@ export class Kaiju {
       if (!sd.armed) { sd.s0 = this.s - IMPACT; sd.s1 = sd.s0 + sd.len; sd.group.position.z = -(sd.s1 - sd.leg.a); }
       animateFlameWave(sd.group, time, sd.armed && !sd.smashT, sd.s0 - dist);
     }
-    if (this.fired >= 2 && !this.survived && game.state === 'running' && !this.waves.some((x) => x.armed && x.s1 > dist - 1)) {
-      this.survived = true; game.score += 400 * game.mult; game.stats.kaiju = (game.stats.kaiju | 0) + 1; game.ui.toast('Godzilla dodged! +400', 'mission');
+    if (this.fired >= N && !this.survived && ctx.state === 'running' && !this.waves.some((x) => x.armed && x.s1 > dist - 1)) {
+      this.survived = true; ctx.score += 400 * ctx.mult; ctx.stats.kaiju = (ctx.stats.kaiju | 0) + 1; ctx.ui.toast('Godzilla dodged! +400', 'mission');
     }
-    if (moving && this.s - dist < 150) { const sw = Math.sin(this.stride); if (sw > 0.97 && !this.thud) { this.thud = true; this.audio.rumble(); game.shake = Math.max(game.shake, 0.18); } if (sw < 0.5) this.thud = false; }
+    if (moving && this.s - dist < 150) { const s2 = Math.sin(this.stride); if (s2 > 0.97 && !this.thud) { this.thud = true; this.audio.rumble(); ctx.shake = Math.max(ctx.shake, 0.18); } if (s2 < 0.5) this.thud = false; }
     if (this.phase === 'leave' && (this.s - dist > 190 || this.turnT > 6 || this.s > leg.b - 10)) this.dispose();
   }
 

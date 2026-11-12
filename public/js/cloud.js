@@ -57,3 +57,26 @@ export async function restore(code) {
   if (j.name && !Store.get().settings.name) { Store.get().settings.name = j.name; Store.save(); }
   return true;
 }
+
+// ---- Daily challenge: everyone gets the same seeded maze (and Godzilla) each UTC day
+export const utcDay = () => new Date().toISOString().slice(0, 10).replace(/-/g, '');
+export function dailySeed(date = utcDay()) { return ((Number(date) * 2654435761) >>> 0) % 1000000000 || 1; }
+const DAILY_KEY = 'labyrinth-run-daily';
+export function dailyLocal() {
+  try { const d = JSON.parse(localStorage.getItem(DAILY_KEY) || '{}'); return d.date === utcDay() ? d : { date: utcDay(), best: 0, plays: 0 }; } catch { return { date: utcDay(), best: 0, plays: 0 }; }
+}
+export function dailyRecord(score) {
+  const d = dailyLocal(); d.plays++; d.best = Math.max(d.best, Math.floor(score));
+  try { localStorage.setItem(DAILY_KEY, JSON.stringify(d)); } catch { /* ignore */ }
+  return d;
+}
+export async function dailyBoard(date = utcDay()) {
+  const r = await fetch(`/api/daily?date=${date}&id=${playerId()}`, { cache: 'no-store' });
+  if (!r.ok) throw new Error('unavailable');
+  return r.json();
+}
+export async function dailySubmit(date, score, dist) {
+  const r = await fetch('/api/daily', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: playerId(), name: Store.get().settings.name, date, score: Math.floor(score), dist: Math.floor(dist) }) });
+  if (!r.ok) throw new Error('unavailable');
+  return r.json();
+}

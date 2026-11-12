@@ -27,6 +27,8 @@ export class UI {
     click('#btnMissions', () => this.openPanel('missionsScreen'));
     click('#btnSettings', () => this.openPanel('settings'));
     click('#btnBoard', () => this.openPanel('board'));
+    click('#btnDaily', () => this.openPanel('daily'));
+    click('#dailyPlay', () => this.game.playDaily());
     click('#btnTogether', () => { this.openPanel('lobby'); this.game.coop.openLobby(); });
     click('#lobbyCreate', () => this.game.coop.create());
     click('#lobbyJoin', () => { const code = $('#lobbyCode').value.trim(); if (code.length === 4) this.game.coop.join(code); else this.lobbyError('Enter the 4-letter code your friend sees.'); });
@@ -34,15 +36,16 @@ export class UI {
     $('#lobbyCode').addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Enter') $('#lobbyJoin').click(); });
     click('#lobbyStart', () => this.game.coop.start());
     click('#lobbyBack', () => { this.game.coop.leave(); this.closePanels(); });
+    click('#coRematch', () => this.game.coop.rematch());
     click('#coAgain', () => { this.hide('coopOver'); this.show('lobby'); this.lobby(this.game.coop); });
     click('#coMenu', () => { this.game.coop.leave(); this.hide('coopOver'); this.game.quitToMenu(); });
     $$('.back').forEach((b) => b.addEventListener('click', () => { Audio.sfx.click(); this.closePanels(); }));
     $$('.tab').forEach((t) => t.addEventListener('click', () => { Audio.sfx.click(); this.shopTab = t.dataset.tab; this.renderShop(); }));
     click('#btnPause', () => this.game.pause());
     click('#btnResume', () => this.game.resume());
-    click('#btnRestart', () => { this.showPause(false); this.game.play(); });
+    click('#btnRestart', () => { this.showPause(false); this.game.replay(); });
     click('#btnQuit', () => { this.showPause(false); this.game.quitToMenu(); });
-    click('#btnAgain', () => { this.hide('gameover'); this.game.play(); });
+    click('#btnAgain', () => { this.hide('gameover'); this.game.replay(); });
     click('#btnMenu', () => { this.hide('gameover'); this.game.quitToMenu(); });
     $('#btnRevive').addEventListener('click', () => { if (this.game.revive()) this.updateHud(this.game, true); else this.updateRevive(); });
     // settings
@@ -113,11 +116,11 @@ export class UI {
 
   openPanel(id) {
     this.hide('menu'); this.show(id);
-    if (id === 'shop') this.renderShop(); if (id === 'missionsScreen') this.renderMissions(); if (id === 'settings') this.renderSettings(); if (id === 'board') this.renderBoard();
+    if (id === 'shop') this.renderShop(); if (id === 'missionsScreen') this.renderMissions(); if (id === 'settings') this.renderSettings(); if (id === 'board') this.renderBoard(); if (id === 'daily') this.renderDaily();
   }
   closePanels() {
-    const was = ['shop', 'missionsScreen', 'settings', 'board', 'lobby'].some((id) => $('#' + id).classList.contains('show'));
-    ['shop', 'missionsScreen', 'settings', 'board', 'lobby'].forEach((id) => this.hide(id));
+    const was = ['shop', 'missionsScreen', 'settings', 'board', 'lobby', 'daily'].some((id) => $('#' + id).classList.contains('show'));
+    ['shop', 'missionsScreen', 'settings', 'board', 'lobby', 'daily'].forEach((id) => this.hide(id));
     if (was) { this.show('menu'); this.refreshMenu(); }
   }
 
@@ -186,6 +189,24 @@ export class UI {
         li.title = `${fmt(e.distance)} m best run`; list.appendChild(li);
       });
     } catch { msg.textContent = 'The leaderboard is unavailable right now (are you offline?). Your stats are saved on this device.'; }
+  }
+
+  async renderDaily() {
+    const d = Cloud.dailyLocal(), list = $('#dailyList'), msg = $('#dailyMsg'), date = Cloud.utcDay();
+    const cell = (k, v) => `<div><small>${k}</small><b>${v}</b></div>`;
+    $('#dailyInfo').textContent = `${date.slice(0, 4)}-${date.slice(4, 6)}-${date.slice(6)} (UTC): everyone gets the same maze and the same Godzilla today. Your best run counts.`;
+    $('#dailyStats').innerHTML = cell('Your best today', fmt(d.best)) + cell('Attempts', fmt(d.plays)) + cell('Rank', '—');
+    list.innerHTML = ''; msg.textContent = 'Loading…';
+    try {
+      const b = await Cloud.dailyBoard(date);
+      msg.textContent = b.top.length ? '' : 'No scores yet today: be the first!';
+      $('#dailyStats').innerHTML = cell('Your best today', fmt(d.best)) + cell('Attempts', fmt(d.plays)) + cell('Rank', b.rank ? `#${fmt(b.rank)} of ${fmt(b.players)}` : '—');
+      b.top.forEach((e, i) => {
+        const li = document.createElement('li'); if (e.me) li.className = 'me';
+        li.innerHTML = '<span class="rk"></span><span class="nm"></span><span class="sc"></span>';
+        li.children[0].textContent = i + 1; li.children[1].textContent = e.name + (e.me ? ' (you)' : ''); li.children[2].textContent = fmt(e.score); li.title = `${fmt(e.dist)} m`; list.appendChild(li);
+      });
+    } catch { msg.textContent = 'The daily board is unavailable right now (offline?). You can still play.'; }
   }
 
   renderSettings() {
@@ -277,11 +298,19 @@ export class UI {
     if (on) this.downT = setTimeout(() => b.classList.add('hidden'), 3000);
   }
 
+  /** The "Rematch" button: hidden when the rival is gone, otherwise shows who has asked. */
+  rematchState(co) {
+    const b = $('#coRematch'); if (!b) return;
+    const ok = !!(co.net && co.net.open && !co.partner.gone && !co.forfeit);
+    b.classList.toggle('hidden', !ok); b.disabled = !!co.iWantRematch;
+    b.textContent = co.iWantRematch && co.rivalWantsRematch ? 'Starting…' : co.iWantRematch ? 'Waiting for rival…' : co.rivalWantsRematch ? '⚔ Rival wants a rematch: accept' : 'Rematch';
+  }
+
   showCoopOver(r) {
     this.hud(false); $('#coopHud').classList.add('hidden'); $('#oppHud').classList.add('hidden');
     const t = $('#coTitle'); t.textContent = r.winner === 'me' ? 'You win!' : r.winner === 'opp' ? `${r.opp.name} wins` : 'It\'s a draw';
     t.className = r.winner === 'me' ? 'win' : r.winner === 'opp' ? 'lose' : '';
-    $('#coWhy').textContent = r.opp.gone ? `${r.opp.name} left the match.` : r.winner === 'tie' ? 'Equal time and score.' : `${r.winner === 'me' ? 'You' : r.opp.name} lasted longer: ${(r.winner === 'me' ? r.me : r.opp).t.toFixed(1)} s vs ${(r.winner === 'me' ? r.opp : r.me).t.toFixed(1)} s.`;
+    $('#coWhy').textContent = r.forfeit ? 'You lost your connection.' : r.opp.gone ? `${r.opp.name} left the match.` : r.winner === 'tie' ? 'Equal time and score.' : `${r.winner === 'me' ? 'You' : r.opp.name} lasted longer: ${(r.winner === 'me' ? r.me : r.opp).t.toFixed(1)} s vs ${(r.winner === 'me' ? r.opp : r.me).t.toFixed(1)} s.`;
     $('#coBest').classList.toggle('hidden', !r.newBest);
     const P = $('#coPlayers'); P.innerHTML = '';
     for (const [who, d, w] of [['You', r.me, r.winner === 'me'], [r.opp.name, r.opp, r.winner === 'opp']]) {
@@ -293,6 +322,7 @@ export class UI {
     const M = $('#coMissions'); M.innerHTML = '';
     for (const m of r.missions) { const d = document.createElement('div'); d.className = 'gm' + (m.owner === 'me' ? ' ok' : ''); d.textContent = `${m.owner === 'me' ? '✔ you' : m.owner === 'opp' ? '✗ ' + r.opp.name : '–'}: ${m.text}`; M.appendChild(d); }
     if (r.reward) { const d = document.createElement('div'); d.className = 'gm ok'; d.textContent = `Mission rewards: +${fmt(r.reward)} coins`; M.appendChild(d); }
+    this.rematchState(this.game.coop);
     this.show('coopOver');
   }
 
@@ -306,8 +336,8 @@ export class UI {
   // ------------------------------------------------------------------ game over
   showGameOver(d) {
     this.hud(false);
-    $('#goTitle').textContent = d.cause === 'caught' ? 'Caught!' : d.cause === 'boulder' ? 'Flattened!' : d.cause === 'burned' ? 'Incinerated!' : d.cause === 'turn' ? 'Missed the turn!' : 'Crushed!';
-    $('#goCause').textContent = d.cause === 'caught' ? 'The Minotaur caught up with you.' : d.cause === 'boulder' ? 'A boulder rolled right over you.' : d.cause === 'burned' ? 'Godzilla\'s blue flame got you. Jump it or take the free lane.' : d.cause === 'turn' ? 'Swipe the way the arrow points to take a corner.' : 'You ran straight into the maze’s stone.';
+    $('#goTitle').textContent = d.cause === 'caught' ? 'Caught!' : d.cause === 'boulder' ? 'Flattened!' : d.cause === 'burned' ? 'Incinerated!' : d.cause === 'quake' ? 'Shockwave!' : d.cause === 'turn' ? 'Missed the turn!' : 'Crushed!';
+    $('#goCause').textContent = d.cause === 'caught' ? 'The Minotaur caught up with you.' : d.cause === 'boulder' ? 'A boulder rolled right over you.' : d.cause === 'burned' ? 'Godzilla\'s blue flame got you. Jump it or take the free lane.' : d.cause === 'quake' ? 'Godzilla\'s tail shockwave hit you. Jump it!' : d.cause === 'turn' ? 'Swipe the way the arrow points to take a corner.' : 'You ran straight into the maze’s stone.';
     $('#goScore').textContent = fmt(d.score);
     $('#goBest').classList.toggle('hidden', !d.newBest);
     $('#goBestVal').textContent = fmt(d.best); $('#goDist').textContent = `${fmt(d.distance)} m`; $('#goCoins').textContent = fmt(d.coins);
@@ -318,6 +348,11 @@ export class UI {
     this.reviveInfo = d; this.updateRevive();
     this.show('gameover');
     const rk = $('#goRank'); rk.classList.add('hidden');
+    if (d.daily) {                                                         // daily challenge: submit to today's board
+      Cloud.dailyRecord(d.score);
+      Cloud.dailySubmit(d.daily, d.score, d.distance).then((r) => { rk.textContent = `📅 Daily rank #${fmt(r.rank)} of ${fmt(r.players)} today (best ${fmt(r.best)})`; rk.classList.remove('hidden'); }).catch(() => {});
+      return;
+    }
     Cloud.push().then(() => Cloud.leaderboard(1)).then((r) => { if (r.rank) { rk.textContent = `🌍 Global rank #${fmt(r.rank)} of ${fmt(r.players)} runners`; rk.classList.remove('hidden'); } }).catch(() => {});
   }
   updateRevive() {
