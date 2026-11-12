@@ -91,7 +91,7 @@ export class Coop {
     this.sendT += dt; this.stT += dt;
     if (this.sendT >= 0.1) {
       this.sendT = 0; const p = g.player;
-      const m = { t: 'state', s: +g.dist.toFixed(2), x: +p.x.toFixed(2), y: +p.y.toFixed(2), sp: +g.speed.toFixed(1), r: p.rollT > 0 ? 1 : 0, f: p.flying ? 1 : 0, c: p.car ? 1 : 0, a: p.dead ? 0 : 1, sc: Math.floor(g.score) };
+      const m = { t: 'state', s: +g.dist.toFixed(2), x: +p.x.toFixed(2), y: +p.y.toFixed(2), sp: +g.speed.toFixed(1), r: p.rollT > 0 ? 1 : 0, f: p.flying ? 1 : 0, c: p.car ? 1 : 0, a: p.dead ? 0 : 1, sc: Math.floor(g.score), mu: g.mult };
       if (this.stT >= 0.5) { this.stT = 0; m.st = this.ownStats(); }
       this.net && this.net.send(m);
     }
@@ -102,7 +102,7 @@ export class Coop {
 
   onState(m) {
     const P = this.partner;
-    if (this.opp) this.opp.receive(m);
+    if (this.opp) { this.opp.receive(m); this.opp.mult = m.mu || 1; }
     P.score = m.sc || 0; P.dist = m.s || 0; if (m.st) P.stats = m.st;
   }
 
@@ -118,7 +118,7 @@ export class Coop {
     P.score = Math.max(P.score, P.fin.score); P.dist = Math.max(P.dist, P.fin.dist);
     if (g.state === 'down') { g.finishRun(); return; }                 // we were out too: the match is over
     if (g.state === 'dying') return;                                    // both fell together: our own death resolves in stepDying
-    this.ui.toast(`${this.oppName()} is out! Keep going to win`, 'mission'); Audio.sfx.mission();
+    this.ui.toast(`${this.oppName()} is OUT! Keep going to win`, 'mission', undefined, 3000); Audio.sfx.mission();
   }
 
   /** The local player crashed: tell the opponent how long and how far we lasted. */
@@ -133,7 +133,7 @@ export class Coop {
     const rt = +m.rt || 0;
     if (ms.pendingAt && (rt > ms.claimT || (Math.abs(rt - ms.claimT) < 0.01 && this.slot === 0))) return;   // our claim was earlier (or we are host on a tie)   // our claim was earlier: ignore theirs
     ms.owner = 'opp'; ms.pendingAt = 0; ms.progress = ms.goal; ms.done = true;
-    this.ui.toast(`${this.oppName()} got it first: ${ms.text}`, 'warn');
+    this.ui.toast(`${this.oppName()} got it first: ${ms.text}`, 'warn', undefined, 3000);
   }
 
   checkMissions() {
@@ -148,7 +148,7 @@ export class Coop {
       if (ms.owner === 'me' && ms.pendingAt && now - ms.pendingAt > 700) {          // nobody beat us to it
         ms.pendingAt = 0; ms.done = true; this.reward += COOP_REWARD;
         const s = Store.get(); s.coins += COOP_REWARD; Store.save();
-        this.ui.toast(`Mission claimed: ${ms.text} (+${COOP_REWARD})`, 'mission'); Audio.sfx.mission();
+        this.ui.toast(`Mission claimed: ${ms.text} (+${COOP_REWARD})`, 'mission', undefined, 3000); Audio.sfx.mission();
       }
     }
   }

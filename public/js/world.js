@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { LANES, SEG_LEN, VIEW_AHEAD, KEEP_BEHIND, BIOME_LEN, BIOMES, CORRIDOR_HALF, PLAYER, POWERUPS, SPEED } from './config.js';
 import * as M from './models.js';
 import { Track, CORNER_HALF } from './track.js';
+import { buildFlameWave } from './kaiju.js';
 
 export function mulberry(seed) {
   let a = seed >>> 0;
@@ -401,7 +402,7 @@ export class World {
       if (sd.ghost || sd.ignore || sd.s1 + PD < dist || sd.s0 - PD > dist) continue;
       const dx = Math.abs(px - sd.x);
       if (dx >= sd.hw + PW) continue;
-      if (sd.type === 'boulder' || sd.isCornerWall) { if (py < sd.H - (sd.isCornerWall ? 0.05 : 0.2)) hits.push({ sd, kind: 'front' }); continue; }
+      if (sd.type === 'boulder' || sd.type === 'flame' || sd.isCornerWall) { if (py < sd.H - (sd.isCornerWall ? 0.05 : 0.2)) hits.push({ sd, kind: 'front' }); continue; }
       if (sd.type === 'high') {
         if (py < sd.yTop && py + ph > sd.yBot) hits.push({ sd, kind: dx > sd.hw - 0.2 || sd.lane === enteredLane || (ownLane >= 0 && sd.lane !== ownLane) ? 'side' : 'front' });
         continue;
@@ -422,6 +423,15 @@ export class World {
     leg.group.add(group); this.solids.push(sd);
     return sd;
   }
+  /** One lane of a blue fire wave from the Godzilla event. Starts disarmed (floor marks only); the creature arms it. Origin is the rear edge. */
+  addFlame(lane, s0, len) {
+    const group = buildFlameWave(this.S, len);
+    const sd = { type: 'flame', lane, x: LANES[lane], s0, s1: s0 + len, len, H: 1.5, ramp: 0, hw: 1.15, group, ghost: true, armed: false, flameSpeed: 38, yBot: 0, yTop: 0 };
+    const leg = this.track.legAt(s0); sd.leg = leg;
+    group.position.set(sd.x, 0, -(sd.s1 - leg.a)); leg.group.add(group); this.solids.push(sd);
+    return sd;
+  }
+  stepFlame(sd, dt) { sd.s0 -= sd.flameSpeed * dt; sd.s1 = sd.s0 + sd.len; sd.group.position.z = -(sd.s1 - sd.leg.a); }
   hasBoulder() { return this.solids.some((sd) => sd.type === 'boulder' && !sd.ghost && sd.s1 > this.dist - 6); }
 
   /** Invisible fatal wall at the end of a corner square: you have to turn before you reach it. */
@@ -627,7 +637,7 @@ export class World {
     u.mark.material.opacity = ahead > 2 ? 0.5 + Math.sin(performance.now() * 0.012) * 0.35 : 0;
     u.mark.scale.y = clamp(ahead / 30, 0.05, 1); u.mark.position.z = 15 * u.mark.scale.y;
     for (const o of this.solids) {                                                                    // it flattens whatever is in its way
-      if (o === sd || o.ghost || o.type === 'boulder' || o.isCornerWall) continue;
+      if (o === sd || o.ghost || o.type === 'boulder' || o.type === 'flame' || o.isCornerWall) continue;
       if (o.s1 > sd.s0 && o.s0 < sd.s1 && Math.abs(o.x - sd.x) < 1.5) this.smash(o);
     }
   }
@@ -671,6 +681,7 @@ export class World {
     for (let i = this.solids.length - 1; i >= 0; i--) {
       const sd = this.solids[i];
       if (sd.type === 'boulder' && !sd.ghost) this.stepBoulder(sd, dt, dist, speed);
+      else if (sd.type === 'flame' && sd.armed && !sd.smashT) this.stepFlame(sd, dt);
       if (sd.s1 < dist - 14) { sd.group.removeFromParent(); this.solids.splice(i, 1); continue; }
       if (sd.type === 'boulder') sd.group.position.x = sd.x;
       if (sd.smashT) {          // ghosted-by-shield obstacles shrink away

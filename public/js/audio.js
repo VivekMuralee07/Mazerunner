@@ -119,6 +119,15 @@ export const sfx = {
   },
   turn() { noise(0.35, { vol: 0.2, freq: 900, sweep: -600, q: 0.8 }); tone(330, 0.2, { type: 'triangle', vol: 0.12, slide: 220 }); },
   rumble() { noise(0.55, { vol: 0.5, freq: 160, sweep: -60, q: 0.7, type: 'lowpass' }); tone(48, 0.5, { type: 'sine', vol: 0.35, slide: -10 }); },
+  kaiju() {                                           // a long, layered, descending roar with a tremolo
+    tone(62, 2.2, { type: 'sawtooth', vol: 0.34, slide: -22, attack: 0.25 }); tone(93, 2.0, { type: 'sawtooth', vol: 0.2, slide: -45, attack: 0.3 });
+    tone(310, 1.6, { type: 'square', vol: 0.07, slide: -160, attack: 0.2, delay: 0.1 });
+    noise(2.0, { vol: 0.3, freq: 700, sweep: -450, q: 1.6, delay: 0.05 }); noise(2.2, { vol: 0.35, freq: 140, type: 'lowpass', sweep: -40 });
+  },
+  flame() {                                           // atomic-breath whoosh: rising roar of filtered noise over a low hum
+    noise(1.6, { vol: 0.42, freq: 500, sweep: 2600, q: 0.9 }); noise(1.8, { vol: 0.3, freq: 220, sweep: -60, type: 'lowpass' });
+    tone(110, 1.6, { type: 'sawtooth', vol: 0.18, slide: 160, attack: 0.1 }); tone(55, 1.8, { type: 'sine', vol: 0.3 });
+  },
   growl() { tone(70, 0.5, { type: 'sawtooth', vol: 0.12, slide: 15 }); noise(0.5, { vol: 0.08, freq: 300, type: 'lowpass' }); },
   power() { [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.25, { type: 'triangle', vol: 0.22, delay: i * 0.07 })); },
   shieldBreak() { noise(0.5, { vol: 0.35, freq: 4000, sweep: -3000, q: 0.6 }); tone(880, 0.4, { type: 'triangle', vol: 0.25, slide: -600 }); },
