@@ -378,7 +378,7 @@ try {
   await page.evaluate(() => navigator.serviceWorker.ready);
   check('service worker is active', await page.evaluate(() => !!navigator.serviceWorker.controller || !!navigator.serviceWorker.ready));
   await page.waitForTimeout(1500);
-  const cached = await page.evaluate(async () => (await (await caches.open('labyrinth-run-v2')).keys()).length);
+  const cached = await page.evaluate(async () => { let n = 0; for (const k of await caches.keys()) n += (await (await caches.open(k)).keys()).length; return n; });
   check('app shell is precached for offline play', cached >= 30, `${cached} files`);
 
   console.log('Pause, controls & visuals');
