@@ -40,7 +40,7 @@ export const POWERUPS = {
   boots:  { name: 'Spring Boots', icon: '👢', color: '#37e08a', base: 9, step: 2.5, desc: 'Jump much higher', cost: [200, 400, 800, 1600, 3200] },
   wings:  { name: 'Wings', icon: '🪽', color: '#6fd6ff', base: 6, step: 1.2, desc: 'Fly over the maze, safely', cost: [300, 600, 1200, 2400, 4800] },
   jetpack: { name: 'Jetpack', icon: '🚀', color: '#ff7a1a', base: 15, step: 0, desc: 'Blast over the maze for 15 seconds, collecting sky coins', cost: [] },
-  car: { name: 'Bonus Car', icon: '🚗', color: '#ff4a5e', base: 120, step: 0, desc: 'Drive a car for 2 minutes', cost: [] },
+  car: { name: 'Bonus Car', icon: '🚗', color: '#ff4a5e', base: 60, step: 0, desc: 'Drive a car for 1 minute', cost: [] },
   heart: { name: 'Revive Heart', icon: '❤', color: '#ff4f8b', base: 0, step: 0, desc: 'Brings your buddy back', cost: [] },
   shield: { name: 'Spirit Shield', icon: '🛡', color: '#b388ff', base: 0, step: 0, desc: 'Absorbs one crash', cost: [] },
 };
@@ -119,4 +119,4 @@ export const COOP_MISSIONS = [          // versus: the first player to reach eac
   { id: 'score', key: 'sc', text: (n) => `First to score ${n.toLocaleString()}`, goals: [6000, 12000, 25000] },
 ];
 export const COOP_REWARD = 120, COOP_ALL_BONUS = 250;   // per mission claimed / for winning the match
-export const CAR = { score: 25000, repeat: 60000, time: 120, speedMul: 1.3, nitroMul: 1.45, nitroTime: 2, nitroCooldown: 5, steer: 12, halfWidth: 0.95, height: 1.4, bonusCoins: 100 };
+export const CAR = { score: 25000, repeat: 60000, time: 60, speedMul: 1.3, nitroMul: 1.45, nitroTime: 2, nitroCooldown: 5, steer: 12, halfWidth: 0.95, height: 1.4, bonusCoins: 100 };

@@ -11,7 +11,9 @@ import * as Audio from './audio.js';
 import * as Missions from './missions.js';
 import * as Tex from './textures.js';
 import * as Models from './models.js';
-import { World } from './world.js';
+import { World, mulberry } from './world.js';
+import { Kaiju } from './kaiju.js';
+import { CORNER_HALF } from './track.js';
 import { Player } from './player.js';
 import { Chaser } from './chaser.js';
 import { Particles, Ambient, buildSky, makeLights, makeHills } from './fx.js';
@@ -76,6 +78,7 @@ export class Game {
 
     this.biomeMats = biomeMats;
     this.world = new World(scene, biomeMats, this.S, this.tex);
+    this.kaiju = new Kaiju(this.world, this.S); this.kaijuRand = Math.random;
     this.player = new Player(scene, SKINS.find((s) => s.id === save.skin), this.S);
     this.chaser = new Chaser(scene);
     this.particles = new Particles(scene, 800);
@@ -148,6 +151,7 @@ export class Game {
     this.dist = 0; this.speed = 0; this.baseSpeed = SPEED.start; this.slowT = 0;
     this.score = 0; this.runCoins = 0; this.banked = 0;
     this.runTime = 0; this.boulderT = 24 + Math.random() * 14; this.boulder = null; this.rumbleT = 0; this.boulderDust = 0;
+    this.kaiju.dispose(); this.kaijuRand = seed != null ? mulberry((seed ^ 0x6d2b79f5) >>> 0) : Math.random; this.kaijuT = 50 + this.kaijuRand() * 20;
     this.stats = { distance: 0, coins: 0, jumps: 0, rolls: 0, powerups: 0, lanes: 0, climbs: 0, score: 0, boulders: 0, helped: 0, cars: 0 };
     this.timers = { magnet: 0, double: 0, boots: 0, wings: 0, jetpack: 0, car: 0 }; this.shield = false;
     this.carOffer = null; this.nextCarAt = CAR.score; this.realmTarget = 0; this.realm = this.realm || 0; Audio.engine(false); Audio.setMood('normal');
@@ -335,7 +339,7 @@ export class Game {
     this.stats.distance = this.dist; this.stats.score = this.score;
 
     w.targetX = p.x;
-    this.updateBoulder(dt, sp);
+    this.updateBoulder(dt, sp); this.updateKaiju(dt, sp);
     w.update(dt, this.dist, sp, this.time);
     this.updateFx(dt, sp);
     this.updateAtmosphere(dt);
@@ -362,13 +366,14 @@ export class Game {
   handleHits(hits) {
     if (!hits.length) return;
     const p = this.player;
-    if (p.car) { for (const h of hits) this.carSmash(h.sd); return; }
+    if (p.car) { for (const h of hits) if (h.sd.type !== 'flame') this.carSmash(h.sd); return; }               // the car is fireproof
     for (const h of hits) {
       const sd = h.sd;
       if (sd.ghost || sd.ignore) continue;
       if (p.invuln > 0 && h.kind === 'front') continue;
       if (this.shield) { this.breakShield(sd); return; }
       if (sd.type === 'boulder') { this.die('boulder'); return; }
+      if (sd.type === 'flame') { this.die('burned'); return; }
       if (sd.isCornerWall) { this.die('turn'); return; }
       const fatal = h.kind === 'front' && (sd.type === 'wall' || sd.type === 'block');
       if (fatal) { this.die('crash'); return; }
@@ -409,12 +414,30 @@ export class Game {
     this.particles.burst(this.player.x, 0.4, 0, 14, this.dustColor || 0xaa9988, 4, 0.5, 0.3, 2);
   }
 
+  /**
+   * Godzilla: now and then it rises in the corridor far ahead, charges, and breathes two waves of blue fire down two of the three
+   * lanes each. Jump the low flames or take the free lane. Waits for a long straight so it never meets a corner.
+   */
+  updateKaiju(dt, sp) {
+    const K = this.kaiju, p = this.player, R = this.kaijuRand;
+    if (K.live) { K.update(dt, this); return; }
+    this.kaijuT -= dt;
+    if (this.kaijuT > 0 || this.state !== STATE.RUNNING || p.flying || p.car || this.boulder || this.dist < 400) return;
+    const T = this.world.track, s = this.dist + 170, leg = T.legAt(s);
+    if (leg !== T.legAt(this.dist) || leg.b - CORNER_HALF - 14 < s + 60) { this.kaijuT = 1.5; return; }        // need a long straight run
+    const cur = p.target, pick = (a) => a[Math.floor(R() * a.length)];
+    const f1 = pick([0, 1, 2].filter((l) => l !== cur)), f2 = f1 === 1 ? pick([0, 2]) : 1;                   // wave 1 burns your lane; wave 2 forces one more step
+    const burn = (f) => [0, 1, 2].filter((l) => l !== f);
+    K.spawn(s, [burn(f1), burn(f2)], Audio.sfx);
+    this.kaijuT = 60 + R() * 35 - clamp(this.dist / 6000, 0, 1) * 20;
+  }
+
   /** Random, homing boulder: warns, rolls toward the player's lane, locks on late, flattens anything in its way. */
   updateBoulder(dt, sp) {
     const p = this.player, w = this.world;
     this.boulderT -= dt;
     const spawnS = this.dist + 80 + sp * 1.5, cornerNear = this.world.track.corners.some((c) => !c.executed && c.s < spawnS + 16 && c.s + 8 > this.dist - 4);
-    if (this.boulderT <= 0 && !p.flying && !this.boulder && !cornerNear && this.dist > 300 && this.state === STATE.RUNNING) {
+    if (this.boulderT <= 0 && !p.flying && !this.boulder && !this.kaiju.live && !cornerNear && this.dist > 300 && this.state === STATE.RUNNING) {
       const diff = clamp(this.dist / 6000, 0, 1);
       this.boulder = w.addBoulder(p.target, spawnS, 13 + diff * 7);
       this.boulderT = 24 + Math.random() * 20 - diff * 8;
@@ -467,7 +490,7 @@ export class Game {
     Audio.sfx.crash();
     this.ui.flash('rgba(255,20,40,0.5)');
     Audio.duck(true);
-    this.particles.burst(this.player.x, 1, 0, 40, 0xff7a3d, 7, 0.9, 0.25);
+    this.particles.burst(this.player.x, 1, 0, 40, cause === 'burned' ? 0x4aa6ff : 0xff7a3d, 7, 0.9, 0.25);
   }
 
   stepDying(dt) {
@@ -577,7 +600,7 @@ export class Game {
     let s = this.dist + 75;
     if (w.track.corners.some((c) => Math.abs(c.s - s) < 22)) s += 50;
     w.addPickup('car', p.target, s, 1.1); this.carOffer = w.pickups[w.pickups.length - 1];
-    this.ui.toast('🚗 A BONUS CAR! Drive it for 2 minutes', 'power', '#ff4a5e'); Audio.sfx.horn();
+    this.ui.toast('🚗 A BONUS CAR! Drive it for 1 minute', 'power', '#ff4a5e'); Audio.sfx.horn();
   }
 
   startCar() {

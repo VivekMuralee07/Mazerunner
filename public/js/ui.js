@@ -106,8 +106,8 @@ export class UI {
     $('#menuRank').textContent = `Multiplier ×${s.rank + 1}`;
   }
 
-  showMenu() { this.hud(false); this.hide('gameover'); this.hide('pause'); this.hide('lobby'); this.hide('coopOver'); this.closePanels(); this.refreshMenu(); this.show('menu'); }
-  onPlay() { this.hide('menu'); this.hide('lobby'); this.hide('coopOver'); this.closePanels(); this.hide('gameover'); this.hud(true); const co = this.game.coop && this.game.coop.active; $('#coopHud').classList.toggle('hidden', !co); $('#btnPause').classList.toggle('hidden', !!co); this.showDown(false); $('#tutorial').classList.add('hidden'); this.clearToasts(); this.updateHud(this.game, true); }
+  showMenu() { this.hud(false); $('#oppHud').classList.add('hidden'); this.hide('gameover'); this.hide('pause'); this.hide('lobby'); this.hide('coopOver'); this.closePanels(); this.refreshMenu(); this.show('menu'); }
+  onPlay() { this.hide('menu'); this.hide('lobby'); this.hide('coopOver'); this.closePanels(); this.hide('gameover'); this.hud(true); const co = this.game.coop && this.game.coop.active; $('#coopHud').classList.toggle('hidden', !co); $('#oppHud').classList.toggle('hidden', !co); $('#btnPause').classList.toggle('hidden', !!co); this.showDown(false); $('#tutorial').classList.add('hidden'); this.clearToasts(); this.updateHud(this.game, true); }
   onRevive() { this.hide('gameover'); this.hud(true); }
   showPause(on) { on ? this.show('pause') : this.hide('pause'); }
 
@@ -230,11 +230,11 @@ export class UI {
   }
   showTutorial() { const t = $('#tutorial'); t.classList.remove('hidden'); t.style.animation = 'none'; void t.offsetWidth; t.style.animation = ''; setTimeout(() => t.classList.add('hidden'), 5200); }
 
-  toast(text, kind = '', color) {
+  toast(text, kind = '', color, ms = 2400) {
     const box = $('#toasts');
     while (box.children.length >= 3) box.firstChild.remove();
     const t = document.createElement('div'); t.className = `toast ${kind}`; t.textContent = text; if (color) t.style.setProperty('--c', color);
-    box.appendChild(t); setTimeout(() => t.remove(), 2400);
+    t.style.animationDuration = `${ms}ms`; box.appendChild(t); setTimeout(() => t.remove(), ms);
   }
   clearToasts() { $('#toasts').innerHTML = ''; for (const [, e] of this.puEls) e.el.remove(); this.puEls.clear(); }
 
@@ -258,32 +258,27 @@ export class UI {
     $('#lobbyStart').classList.toggle('hidden', !(host && co.stage === 'ready'));
   }
 
-  coopBegin() { $('#coopHud').classList.remove('hidden'); $('#btnPause').classList.add('hidden'); this.coopHudT = 0; }
+  coopBegin() { $('#coopHud').classList.remove('hidden'); $('#oppHud').classList.remove('hidden'); $('#btnPause').classList.add('hidden'); this.coopHudT = 0; }
 
+  /** Versus HUD: only the opponent's points, multiplier, distance and coins (top half). Everything else is a 3-second pop-up. */
   coopHud(co) {
-    const now = performance.now(); if (now - (this.coopHudT || 0) < 200) return; this.coopHudT = now;
-    const P = co.partner, g = co.game, name = co.oppName(), rel = Math.round(g.dist - P.dist);
-    const bar = $('#vsBar'); bar.classList.toggle('lead', P.alive && g.player && !g.player.dead && rel > 0);
-    const state = P.gone ? 'left the match' : !P.alive ? 'is OUT' : rel === 0 ? 'level with you' : `${Math.abs(rel)} m ${rel > 0 ? 'behind' : 'ahead'}`;
-    $('#vsOpp').textContent = `${name} · ${P.alive ? fmt(P.score) : fmt(P.fin ? P.fin.score : P.score) + ' · OUT'}`;
-    $('#vsMid').textContent = g.player && g.player.dead ? 'YOU ARE OUT' : `${P.alive ? state : name + ' ' + state}`;
-    $('#vsMe').textContent = `You · ${fmt(g.score)}`;
-    const box = $('#coopMissions'); if (box.children.length !== co.missions.length) { box.innerHTML = ''; for (let i = 0; i < co.missions.length; i++) { const d = document.createElement('div'); d.className = 'cm'; d.innerHTML = '<i></i><span></span>'; box.appendChild(d); } }
-    co.missions.forEach((m, i) => {
-      const d = box.children[i], mine = m.owner === 'me', theirs = m.owner === 'opp';
-      d.classList.toggle('done', mine); d.classList.toggle('lost', theirs);
-      d.firstChild.style.width = `${Math.round((m.progress / m.goal) * 100)}%`;
-      d.lastChild.textContent = `${mine ? '✔ ' : theirs ? '✗ ' : ''}${m.text}${m.owner ? '' : ` (${fmt(m.progress)}/${fmt(m.goal)})`}`;
-    });
+    const now = performance.now(); if (now - (this.coopHudT || 0) < 150) return; this.coopHudT = now;
+    const P = co.partner, o = co.opp, fin = P.fin;
+    $('#oppScore').textContent = fmt(fin ? fin.score : P.score);
+    $('#oppMult').textContent = `×${(o && o.mult) || 1}`;
+    $('#oppDist').textContent = `${fmt(fin ? fin.dist : Math.floor(P.dist))} m`;
+    $('#oppCoins').textContent = fmt(fin ? fin.coins : (P.stats.c | 0));
+    $('#oppHud').classList.toggle('out', !P.alive || P.gone);
   }
 
-  showDown(on, name = 'your rival') {
-    const b = $('#downBanner'); b.classList.toggle('hidden', !on);
-    if (on) b.querySelector('span').textContent = `Watching ${name} play on. If they crash before you would have, you still lose, so cheer them to fail.`;
+  /** "You're out" notice: shows for 3 seconds, then gets out of the way. */
+  showDown(on) {
+    const b = $('#downBanner'); clearTimeout(this.downT); b.classList.toggle('hidden', !on);
+    if (on) this.downT = setTimeout(() => b.classList.add('hidden'), 3000);
   }
 
   showCoopOver(r) {
-    this.hud(false); $('#coopHud').classList.add('hidden');
+    this.hud(false); $('#coopHud').classList.add('hidden'); $('#oppHud').classList.add('hidden');
     const t = $('#coTitle'); t.textContent = r.winner === 'me' ? 'You win!' : r.winner === 'opp' ? `${r.opp.name} wins` : 'It\'s a draw';
     t.className = r.winner === 'me' ? 'win' : r.winner === 'opp' ? 'lose' : '';
     $('#coWhy').textContent = r.opp.gone ? `${r.opp.name} left the match.` : r.winner === 'tie' ? 'Equal time and score.' : `${r.winner === 'me' ? 'You' : r.opp.name} lasted longer: ${(r.winner === 'me' ? r.me : r.opp).t.toFixed(1)} s vs ${(r.winner === 'me' ? r.opp : r.me).t.toFixed(1)} s.`;
@@ -311,8 +306,8 @@ export class UI {
   // ------------------------------------------------------------------ game over
   showGameOver(d) {
     this.hud(false);
-    $('#goTitle').textContent = d.cause === 'caught' ? 'Caught!' : d.cause === 'boulder' ? 'Flattened!' : d.cause === 'turn' ? 'Missed the turn!' : 'Crushed!';
-    $('#goCause').textContent = d.cause === 'caught' ? 'The Minotaur caught up with you.' : d.cause === 'boulder' ? 'A boulder rolled right over you.' : d.cause === 'turn' ? 'Swipe the way the arrow points to take a corner.' : 'You ran straight into the maze’s stone.';
+    $('#goTitle').textContent = d.cause === 'caught' ? 'Caught!' : d.cause === 'boulder' ? 'Flattened!' : d.cause === 'burned' ? 'Incinerated!' : d.cause === 'turn' ? 'Missed the turn!' : 'Crushed!';
+    $('#goCause').textContent = d.cause === 'caught' ? 'The Minotaur caught up with you.' : d.cause === 'boulder' ? 'A boulder rolled right over you.' : d.cause === 'burned' ? 'Godzilla\'s blue flame got you. Jump it or take the free lane.' : d.cause === 'turn' ? 'Swipe the way the arrow points to take a corner.' : 'You ran straight into the maze’s stone.';
     $('#goScore').textContent = fmt(d.score);
     $('#goBest').classList.toggle('hidden', !d.newBest);
     $('#goBestVal').textContent = fmt(d.best); $('#goDist').textContent = `${fmt(d.distance)} m`; $('#goCoins').textContent = fmt(d.coins);
