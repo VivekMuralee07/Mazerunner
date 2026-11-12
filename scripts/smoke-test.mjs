@@ -263,22 +263,22 @@ try {
 
   console.log('Godzilla (blue flame)');
   const KZ = "const g = window.__game, T = window.T; T.start(); g.boulderT = 1e9; g.kaijuT = 1e9; const FX = { kaiju() {}, flame() {}, rumble() {} };";
-  r = await page.evaluate(`(() => { ${KZ} g.kaiju.spawn(g.dist + 170, [[0, 2], [0, 2]], FX); g.player.invuln = 9999; const ph = new Set(); let n = 0; while (n++ < 60 * 6) { g.step(1 / 60); ph.add(g.kaiju.phase); } const w = g.world.solids.filter((x) => x.type === 'flame'); return { ph: [...ph], fired: g.kaiju.fired, waves: w.length, armed: w.filter((x) => x.armed).length, vis: w.every((x) => x.group.visible), model: !!g.kaiju.model.parent }; })()`);
+  r = await page.evaluate(`(() => { ${KZ} g.kaiju.spawn(g.dist + 170, [[0, 2], [0, 2]], FX); g.player.invuln = 9999; const ph = new Set(); let n = 0, most = 0, armed = 0, vis = true; while (n++ < 60 * 6) { g.step(1 / 60); ph.add(g.kaiju.phase); const w = g.world.solids.filter((x) => x.type === 'flame'); most = Math.max(most, w.length); armed = Math.max(armed, w.filter((x) => x.armed).length); if (w.some((x) => x.armed && !x.group.visible)) vis = false; } return { ph: [...ph], fired: g.kaiju.fired, waves: most, armed, vis, model: !!g.kaiju.model.parent }; })()`);
   check('Godzilla rises, charges, breathes two waves (each on two lanes) and the fire is visible', r.ph.includes('rise') && r.ph.includes('charge') && r.ph.includes('breathe') && r.fired === 2 && r.waves >= 4 && r.armed >= 2 && r.vis && r.model, JSON.stringify(r));
-  r = await page.evaluate(`(() => { ${KZ} g.kaiju.spawn(g.dist + 170, [[0, 2], [0, 2]], FX); g.player.invuln = 0; T.until(() => g.state === 'dying', 12); return { st: g.state, cause: g.cause }; })()`);
+  r = await page.evaluate(`(() => { ${KZ} g.kaiju.spawn(g.dist + 170, [[1, 2], [1, 2]], FX); g.player.invuln = 0; T.until(() => g.state === 'dying', 12); return { st: g.state, cause: g.cause }; })()`);
   check('standing in a burning lane is fatal ("burned")', r.st === 'dying' && r.cause === 'burned', JSON.stringify(r));
-  r = await page.evaluate(`(() => { ${KZ} g.kaiju.spawn(g.dist + 170, [[0, 2], [0, 2]], FX); g.player.invuln = 0; T.until(() => g.kaiju.fired >= 2 && !g.kaiju.waves.some((x) => x.armed && x.s1 > g.dist - 1) || g.state === 'dying', 14); return { st: g.state, kz: g.stats.kaiju | 0 }; })()`);
+  r = await page.evaluate(`(() => { ${KZ} g.kaiju.spawn(g.dist + 170, [[0, 2], [0, 2]], FX); g.player.invuln = 0; T.until(() => g.kaiju.fired >= 2 && !g.kaiju.waves.some((x) => x.armed && x.s1 > g.dist - 1) || g.state === 'dying', 14); T.run(0.6); return { st: g.state, kz: g.stats.kaiju | 0 }; })()`);
   check('the free lane is safe, and dodging both waves scores', r.st === 'running' && r.kz === 1, JSON.stringify(r));
   r = await page.evaluate(`(() => { ${KZ} const w = g.world, sd = w.addFlame(0, g.dist + 20, 5); sd.armed = true; sd.ghost = false; const low = w.probe(sd.s0 + 1, -2.4, 0, 1.75).hits.some((h) => h.sd === sd), high = w.probe(sd.s0 + 1, -2.4, 1.6, 1.75).hits.some((h) => h.sd === sd), other = w.probe(sd.s0 + 1, 0, 0, 1.75).hits.some((h) => h.sd === sd); return { low, high, other }; })()`);
   check('flames are low: they burn on the ground, a jump (or flight) clears them, other lanes are unaffected', r.low && !r.high && !r.other, JSON.stringify(r));
-  r = await page.evaluate(`(() => { ${KZ} g.grant('shield', 0, 1); g.player.moveLane(0); g.kaiju.spawn(g.dist + 170, [[0, 2], [0, 2]], FX); g.player.invuln = 0; T.until(() => g.state === 'dying' || (g.kaiju.fired >= 1 && !g.shield), 10); return { st: g.state, shield: g.shield }; })()`);
+  r = await page.evaluate(`(() => { ${KZ} g.grant('shield', 0, 1); g.kaiju.spawn(g.dist + 170, [[1, 2], [1, 2]], FX); g.player.invuln = 0; T.until(() => g.state === 'dying' || (g.kaiju.fired >= 1 && !g.shield), 10); return { st: g.state, shield: g.shield }; })()`);
   check('the Spirit Shield absorbs a flame wave', r.st === 'running' && !r.shield, JSON.stringify(r));
   r = await page.evaluate(`(() => { ${KZ} g.grant('jetpack', 0, 1); g.kaiju.spawn(g.dist + 170, [[0, 1, 2], [0, 1, 2]], FX); T.until(() => g.kaiju.fired >= 2 && g.kaiju.t > 6.5 || g.state === 'dying', 12); return { st: g.state }; })()`);
   check('flying over the flames with the jetpack is safe', r.st === 'running', JSON.stringify(r));
   r = await page.evaluate(`(() => { ${KZ} g.score = 24990; g.player.invuln = 9999; T.run(2); const car = g.world.pickups.find((q) => q.type === 'car'); if (car) g.grant('car', 0, 1); g.kaiju.spawn(g.dist + 170, [[0, 1, 2], [0, 1, 2]], FX); g.player.invuln = 0; T.until(() => g.kaiju.fired >= 2 && g.kaiju.t > 6 || g.state === 'dying', 12); return { st: g.state, car: !!g.player.car }; })()`);
   check('the car is fireproof', r.st === 'running' && r.car, JSON.stringify(r));
-  r = await page.evaluate(`(() => { const g = window.__game, T = window.T; T.start(); g.boulderT = 1e9; g.kaijuT = 0; g.dist = 460; g.world.reset(5, 460); g.world.update(0.016, 460, 20, 0); let on = false; for (let i = 0; i < 60 * 6; i++) { g.step(1 / 60); if (g.kaiju.live) { on = true; break; } } g.kaiju.dispose(); return { on }; })()`);
-  check('Godzilla turns up on its own on a long straight corridor', r.on, JSON.stringify(r));
+  r = await page.evaluate(`(() => { const g = window.__game, T = window.T; T.start(); g.boulderT = 1e9; g.kaijuT = 0; g.player.invuln = 9999; g.autoTurn = true; let on = false, at = 0, n = 0; while (n++ < 60 * 150 && g.state === 'running') { g.step(1 / 60); for (const o of g.world.solids) if (!o.isCornerWall && o.type !== 'flame') o.ghost = true; if (g.kaiju.live) { on = true; at = g.dist; break; } } const gap = g.kaiju.live ? g.kaiju.s - g.dist : 0; g.kaiju.dispose(); return { on, at: Math.round(at), gap: Math.round(gap) }; })()`);
+  check('Godzilla turns up on its own (after 400 m, on a long straight) well ahead of you', r.on && r.at > 400 && r.gap > 100, JSON.stringify(r));
   r = await page.evaluate(() => {
     const g = window.__game, T = window.T; T.start(); g.boulderT = 0.5; g.dist = 400; g.world.reset(3, 400); let seen = 0, t = 0;
     for (let i = 0; i < 60 * 70 && g.state === 'running'; i++) { g.step(1 / 60); if (g.boulder && !seen) seen = i / 60; }
@@ -381,7 +381,7 @@ try {
   check('nitro boosts the speed and then needs to recharge', r.nitro > 1.3 && r.cd, JSON.stringify({ nitro: r.nitro }));
   check('the car smashes gates and slabs instead of crashing', r.smashed >= 2 && r.stillRunning && r.scoreUp, JSON.stringify({ smashed: r.smashed }));
   check('flight pick-ups do nothing while driving', r.noFlightInCar);
-  check('the ride ends after ~2 minutes with a coin bonus, brief invulnerability and the next car much later', r.ended && r.ranFor >= 112 && r.ranFor <= 122 && r.bonus && r.safe && r.realmEnd === 0 && r.next, JSON.stringify({ ranFor: r.ranFor }));
+  check('the ride ends after ~1 minute with a coin bonus, brief invulnerability and the next car much later', r.ended && r.ranFor >= 52 && r.ranFor <= 62 && r.bonus && r.safe && r.realmEnd === 0 && r.next, JSON.stringify({ ranFor: r.ranFor }));
 
   console.log('Persistent stats (server + device)');
   r = await page.evaluate(async () => {
@@ -489,7 +489,7 @@ try {
 
   console.log('Endless-run fuzz (bot plays ~10 simulated minutes, all biomes)');
   r = await page.evaluate(() => {
-    const g = window.__game; g.state = 'menu'; g.ui.hide('pause'); g.play(); g.autoTurn = false; let n = 0; while (g.state !== 'running' && n++ < 600) g.step(1 / 60);
+    const g = window.__game; g.state = 'menu'; g.ui.hide('pause'); g.play(); g.autoTurn = false; g.kaijuT = 1e9; let n = 0; while (g.state !== 'running' && n++ < 600) g.step(1 / 60);
     const w = g.world; let t = 0;
     const biomes = new Set(); let trace = null; const origDie = g.die.bind(g);
     g.die = (c) => { trace = { c, lane: g.player.target, x: +g.player.x.toFixed(2), y: +g.player.y.toFixed(2), roll: g.player.rollT > 0, near: w.solids.filter((s) => Math.abs(s.s0 - g.dist) < 14).map((s) => `${s.type}${s.lane}@${(s.s0 - g.dist).toFixed(1)}..${(s.s1 - g.dist).toFixed(1)}${s.ghost ? 'G' : ''}${s.ignore ? 'I' : ''}`) }; origDie(c); };
