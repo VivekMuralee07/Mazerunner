@@ -689,7 +689,7 @@ export class World {
         const k = Math.max(0, 1 - sd.smashT);
         sd.group.scale.set(1 + sd.smashT * 0.4, k, 1 + sd.smashT * 0.4);
         if (k <= 0) { sd.group.visible = false; }
-      } else if (sd.ghost) sd.group.visible = false;
+      } else if (sd.ghost && sd.type !== 'flame') sd.group.visible = false;
     }
 
     // coins -> instanced matrices (composed with their leg's transform)
