@@ -60,10 +60,10 @@ function crack(ctx, S, rand, color, width, len, branchChance = 0.12) {
 }
 
 // ---------------------------------------------------------------- WALLS
-function hedgeWall(S = 512) {
-  const rand = rng(11), c = canvas(S), x = c.getContext('2d');
-  x.fillStyle = '#2a7a2c'; x.fillRect(0, 0, S, S);
-  const greens = ['#2f9a3c', '#3cb04d', '#4cc85e', '#63da70', '#84e68c', '#27843a'];
+function hedgeWall(S = 512, o = {}) {
+  const rand = rng(o.seed || 11), c = canvas(S), x = c.getContext('2d');
+  x.fillStyle = o.base || '#2a7a2c'; x.fillRect(0, 0, S, S);
+  const greens = o.greens || ['#2f9a3c', '#3cb04d', '#4cc85e', '#63da70', '#84e68c', '#27843a'];
   for (let layer = 0; layer < 3; layer++) {
     const n = 1100 - layer * 200;
     for (let i = 0; i < n; i++) {
@@ -79,12 +79,14 @@ function hedgeWall(S = 512) {
       });
     }
   }
-  // a few wild roses / glowing berries
-  for (let i = 0; i < 26; i++) {
-    const px = rand() * S, py = rand() * S;
-    wrap(S, px, py, 8, (wx, wy) => {
-      x.fillStyle = rand() > 0.5 ? '#c2185b' : '#ffcf4a';
-      x.beginPath(); x.arc(wx, wy, 2.6 + rand() * 2, 0, 6.28); x.fill();
+  // flowers / berries
+  const fl = o.flowers || ['#c2185b', '#ffcf4a'], nf = o.flowerN ?? 26, fr = o.flowerR || [2.6, 4.6];
+  for (let i = 0; i < nf; i++) {
+    const px = rand() * S, py = rand() * S, col = fl[Math.floor(rand() * fl.length)], rr = fr[0] + rand() * (fr[1] - fr[0]);
+    wrap(S, px, py, 10, (wx, wy) => {
+      x.fillStyle = col;
+      if (nf > 100) { for (let k = 0; k < 5; k++) { const a = k * 1.2566; x.beginPath(); x.arc(wx + Math.cos(a) * rr * 0.7, wy + Math.sin(a) * rr * 0.7, rr * 0.6, 0, 6.28); x.fill(); } x.fillStyle = '#ffe9a8'; x.beginPath(); x.arc(wx, wy, rr * 0.3, 0, 6.28); x.fill(); }
+      else { x.beginPath(); x.arc(wx, wy, rr, 0, 6.28); x.fill(); }
     });
   }
   speckle(x, S, rand, 26);
@@ -93,19 +95,19 @@ function hedgeWall(S = 512) {
   return { map: c, bump: grayBump(c), emissive: null, bumpScale: 2.2, rough: 0.95 };
 }
 
-function stoneWall(S = 512) {
-  const rand = rng(23), c = canvas(S), x = c.getContext('2d');
+function stoneWall(S = 512, o = {}) {
+  const rand = rng(o.seed || 23), c = canvas(S), x = c.getContext('2d');
   const em = canvas(S), ex = em.getContext('2d');
-  x.fillStyle = '#9d8a70'; x.fillRect(0, 0, S, S);
+  x.fillStyle = o.base || '#8a785f'; x.fillRect(0, 0, S, S);
   ex.fillStyle = '#000'; ex.fillRect(0, 0, S, S);
   const rows = 8, bh = S / rows;
   for (let r = 0; r < rows; r++) {
     const bw = S / 4, off = (r % 2) * (bw / 2);
     for (let b = -1; b < 5; b++) {
       const bx = b * bw + off, by = r * bh;
-      const v = 178 + rand() * 40;
-      const tint = rand();
-      x.fillStyle = rgb(v + 14 * tint, v + 6, v + 22 * (1 - tint));
+      const v = (o.v0 || 152) + rand() * 40;
+      const tint = rand(), tt = o.tint || [14, 6, 22];
+      x.fillStyle = rgb(v + tt[0] * tint, v + tt[1], v + tt[2] * (1 - tint));
       x.fillRect(bx + 3, by + 3, bw - 6, bh - 6);
       // chipped highlight / shadow edges
       x.fillStyle = 'rgba(255,255,255,0.08)'; x.fillRect(bx + 3, by + 3, bw - 6, 3);
@@ -113,15 +115,25 @@ function stoneWall(S = 512) {
     }
   }
   // moss
-  for (let i = 0; i < 140; i++) {
+  for (let i = 0; i < (o.moss ?? 140); i++) {
     const px = rand() * S, py = rand() * S, r = 6 + rand() * 18;
     wrap(S, px, py, r, (wx, wy) => {
       const g = x.createRadialGradient(wx, wy, 0, wx, wy, r);
-      g.addColorStop(0, 'rgba(70,140,60,0.35)'); g.addColorStop(1, 'rgba(70,140,60,0)');
+      g.addColorStop(0, `rgba(70,140,60,${o.mossA ?? 0.35})`); g.addColorStop(1, 'rgba(70,140,60,0)');
       x.fillStyle = g; x.fillRect(wx - r, wy - r, r * 2, r * 2);
     });
   }
   speckle(x, S, rand, 34);
+  for (let i = 0; i < (o.vines ?? 0); i++) {                           // creeping vines
+    let px = rand() * S, py = rand() * S, a = rand() * 6.28;
+    x.strokeStyle = 'rgba(30,90,35,0.85)'; x.lineWidth = 3; x.lineCap = 'round';
+    for (let k = 0; k < 24; k++) {
+      const nx = px + Math.cos(a) * 10, ny = py + Math.sin(a) * 10;
+      for (const ox of [0, -S, S]) for (const oy of [0, -S, S]) { x.beginPath(); x.moveTo(px + ox, py + oy); x.lineTo(nx + ox, ny + oy); x.stroke(); }
+      if (k % 3 === 0) wrap(S, nx, ny, 8, (wx, wy) => { x.fillStyle = 'rgba(70,170,70,0.9)'; x.beginPath(); x.ellipse(wx, wy, 6, 3, a, 0, 6.28); x.fill(); });
+      px = (nx + S) % S; py = (ny + S) % S; a += (rand() - 0.5) * 0.8;
+    }
+  }
   // glowing runes carved in a handful of bricks
   ex.strokeStyle = '#ffffff'; ex.lineWidth = 2.5; ex.lineCap = 'round';
   for (let i = 0; i < 9; i++) {
@@ -142,7 +154,7 @@ function crystalWall(S = 512) {
   const em = canvas(S), ex = em.getContext('2d');
   x.fillStyle = '#bfe3f5'; x.fillRect(0, 0, S, S);
   ex.fillStyle = '#000'; ex.fillRect(0, 0, S, S);
-  const cols = ['#bfe3f5', '#a6d6f0', '#d8f1fb', '#8ccbe9', '#c6e9f8', '#9bd3ee'];
+  const cols = ['#a4d2ea', '#8cc4e4', '#bfe5f6', '#74b6dc', '#addcf3', '#82c1e2'];
   for (let i = 0; i < 220; i++) {
     const px = rand() * S, py = rand() * S, r = 22 + rand() * 46, col = cols[Math.floor(rand() * cols.length)];
     const a = rand() * 6.28, pts = 3 + Math.floor(rand() * 3);
@@ -171,7 +183,7 @@ function basaltWall(S = 512) {
   const hs = 64;
   for (let r = -1; r < S / (hs * 0.87) + 1; r++) for (let q = -1; q < S / hs + 1; q++) {
     const cx = q * hs + (r % 2 ? hs / 2 : 0), cy = r * hs * 0.87;
-    const v = 175 + rand() * 40;
+    const v = 150 + rand() * 40;
     x.fillStyle = rgb(v + 8, v * 0.7, v * 0.65);
     x.beginPath();
     for (let k = 0; k < 6; k++) { const a = Math.PI / 3 * k + Math.PI / 6; x.lineTo(cx + Math.cos(a) * hs * 0.56, cy + Math.sin(a) * hs * 0.56); }
@@ -186,26 +198,32 @@ function basaltWall(S = 512) {
 }
 
 // ---------------------------------------------------------------- FLOORS
-function cobbleFloor(S = 512) {
-  const rand = rng(71), c = canvas(S), x = c.getContext('2d');
-  x.fillStyle = '#7f9070'; x.fillRect(0, 0, S, S);
+function cobbleFloor(S = 512, o = {}) {
+  const rand = rng(o.seed || 71), c = canvas(S), x = c.getContext('2d');
+  x.fillStyle = o.base || '#56684a'; x.fillRect(0, 0, S, S);
   for (let i = 0; i < 150; i++) {
-    const px = rand() * S, py = rand() * S, r = 16 + rand() * 14, v = 170 + rand() * 45;
+    const px = rand() * S, py = rand() * S, r = 16 + rand() * 14, v = (o.v0 || 120) + rand() * 45;
     wrap(S, px, py, r, (wx, wy) => {
       const g = x.createRadialGradient(wx - r * 0.3, wy - r * 0.3, 1, wx, wy, r);
-      g.addColorStop(0, rgb(v + 20, v + 26, v + 10)); g.addColorStop(1, rgb(v - 20, v - 12, v - 25));
+      const t = o.tint || [20, 26, 10];
+      g.addColorStop(0, rgb(v + t[0], v + t[1], v + t[2])); g.addColorStop(1, rgb(v - 20, v - 12, v - 25));
       x.fillStyle = g; x.beginPath(); x.ellipse(wx, wy, r, r * 0.85, rand() * 3, 0, 6.28); x.fill();
     });
   }
-  for (let i = 0; i < 90; i++) {
+  for (let i = 0; i < (o.moss ?? 90); i++) {
     const px = rand() * S, py = rand() * S, r = 10 + rand() * 20;
     wrap(S, px, py, r, (wx, wy) => { const g = x.createRadialGradient(wx, wy, 0, wx, wy, r); g.addColorStop(0, 'rgba(50,120,45,0.4)'); g.addColorStop(1, 'rgba(50,120,45,0)'); x.fillStyle = g; x.fillRect(wx - r, wy - r, r * 2, r * 2); });
+  }
+  const lit = o.litter;                                                 // petals / fallen leaves scattered on the path
+  if (lit) for (let i = 0; i < lit.n; i++) {
+    const px = rand() * S, py = rand() * S, col = lit.colors[Math.floor(rand() * lit.colors.length)], rr = lit.r * (0.6 + rand() * 0.8), rot = rand() * 6.28;
+    wrap(S, px, py, rr * 2, (wx, wy) => { x.save(); x.translate(wx, wy); x.rotate(rot); x.fillStyle = col; x.globalAlpha = 0.9; x.beginPath(); x.ellipse(0, 0, rr, rr * 0.55, 0, 0, 6.28); x.fill(); x.restore(); });
   }
   speckle(x, S, rand, 30);
   return { map: c, bump: grayBump(c), emissive: null, bumpScale: 2.6, rough: 0.9 };
 }
 
-function tileFloor(S, seed, base, groutColor, glow) {
+function tileFloor(S, seed, base, groutColor, glow, overlay) {
   const rand = rng(seed), c = canvas(S), x = c.getContext('2d');
   const em = canvas(S), ex = em.getContext('2d');
   x.fillStyle = groutColor; x.fillRect(0, 0, S, S);
@@ -219,6 +237,7 @@ function tileFloor(S, seed, base, groutColor, glow) {
     x.fillStyle = 'rgba(0,0,0,0.25)'; x.fillRect(i * t + 4, j * t + t - 8, t - 8, 4);
   }
   speckle(x, S, rand, 28);
+  if (overlay) overlay(x, S, rand);
   if (glow) {
     for (let i = 0; i < 6; i++) crack(x, S, rand, 'rgba(0,0,0,0.55)', 2, 22, 0.2);
     ex.globalCompositeOperation = 'lighter';
@@ -227,12 +246,50 @@ function tileFloor(S, seed, base, groutColor, glow) {
   return { map: c, bump: grayBump(c), emissive: glow ? em : null, bumpScale: 2.4, rough: 0.82 };
 }
 
-const WALLS = { hedge: hedgeWall, stone: stoneWall, crystal: crystalWall, basalt: basaltWall };
+function coralWall(S = 512) {
+  const rand = rng(61), c = canvas(S), x = c.getContext('2d');
+  x.fillStyle = '#d9b8a0'; x.fillRect(0, 0, S, S);
+  for (let i = 0; i < 700; i++) {                                      // sandy mottling
+    const px = rand() * S, py = rand() * S, r = 3 + rand() * 12, v = 190 + rand() * 40;
+    wrap(S, px, py, r, (wx, wy) => { x.fillStyle = `rgba(${v},${v - 28},${v - 55},0.35)`; x.beginPath(); x.arc(wx, wy, r, 0, 6.28); x.fill(); });
+  }
+  const cols = ['#ff7f9a', '#ff9a5a', '#f2547d', '#3cc9bd', '#ffb3c7', '#ffd166'];
+  for (let i = 0; i < 70; i++) {                                       // branching coral
+    const px = rand() * S, py = rand() * S, col = cols[Math.floor(rand() * cols.length)];
+    wrap(S, px, py, 60, (wx, wy) => {
+      x.strokeStyle = col; x.lineCap = 'round';
+      const branch = (bx, by, a, len, w, d) => {
+        x.lineWidth = w; x.beginPath(); x.moveTo(bx, by); const nx = bx + Math.cos(a) * len, ny = by + Math.sin(a) * len; x.lineTo(nx, ny); x.stroke();
+        if (d > 0) { branch(nx, ny, a - 0.5 - rand() * 0.3, len * 0.72, w * 0.75, d - 1); branch(nx, ny, a + 0.5 + rand() * 0.3, len * 0.72, w * 0.75, d - 1); }
+        else { x.fillStyle = 'rgba(255,255,255,0.7)'; x.beginPath(); x.arc(nx, ny, w * 0.7, 0, 6.28); x.fill(); }
+      };
+      branch(wx, wy, -Math.PI / 2 + (rand() - 0.5) * 1.2, 16 + rand() * 12, 6, 3);
+    });
+  }
+  for (let i = 0; i < 40; i++) {                                       // little shells
+    const px = rand() * S, py = rand() * S;
+    wrap(S, px, py, 12, (wx, wy) => { x.strokeStyle = 'rgba(255,255,255,0.8)'; x.lineWidth = 2; x.beginPath(); for (let a = 0; a < 12; a += 0.3) x.lineTo(wx + Math.cos(a) * a * 0.9, wy + Math.sin(a) * a * 0.9); x.stroke(); });
+  }
+  speckle(x, S, rand, 20);
+  const em = canvas(S), ex = em.getContext('2d'); ex.fillStyle = '#000'; ex.fillRect(0, 0, S, S);
+  return { map: c, bump: grayBump(c), emissive: null, bumpScale: 3, rough: 0.8 };
+}
+
+const WALLS = {
+  hedge: hedgeWall, stone: stoneWall, crystal: crystalWall, basalt: basaltWall, coral: coralWall,
+  blossom: (S) => hedgeWall(S, { seed: 31, base: '#3a8a3a', greens: ['#3a9a44', '#4fb457', '#62c86a', '#7bd882', '#2f8a3c'], flowers: ['#ffb3cf', '#ff8fb8', '#ffe0ec', '#ffffff', '#ffa6c6'], flowerN: 520, flowerR: [3, 6] }),
+  autumn: (S) => hedgeWall(S, { seed: 41, base: '#8a3f18', greens: ['#e0701a', '#f08a24', '#d44a1a', '#f2b134', '#b8381a', '#c25a1a', '#8aa52a'], flowers: ['#7a1a10'], flowerN: 18 }),
+  mossy: (S) => stoneWall(S, { seed: 51, base: '#4f5a46', v0: 105, tint: [4, 22, 2], moss: 520, mossA: 0.6, vines: 22 }),
+};
 const FLOORS = {
   cobble: () => cobbleFloor(),
-  flag: () => tileFloor(512, 81, 0xd6cbe0, '#8d8299', null),
-  slate: () => tileFloor(512, 91, 0xbcd8e8, '#6f93aa', '#46d8ff'),
-  ember: () => tileFloor(512, 99, 0xdcb8a0, '#90604a', '#ff6a2a'),
+  pinkpath: () => cobbleFloor(512, { seed: 77, base: '#9c8088', v0: 150, tint: [26, 8, 14], moss: 0, litter: { n: 260, colors: ['#ffc2d8', '#ff9fc2', '#ffe3ee'], r: 7 } }),
+  leaflitter: () => cobbleFloor(512, { seed: 79, base: '#5a3f26', v0: 100, tint: [24, 10, -4], moss: 0, litter: { n: 280, colors: ['#e0701a', '#f2a23a', '#c4411a', '#e8c04a'], r: 8 } }),
+  mossflag: () => tileFloor(512, 133, 0x7f8f78, '#3f4d3a', null, (x, S, rand) => { for (let i = 0; i < 160; i++) { const px = rand() * S, py = rand() * S, r = 8 + rand() * 24; const g = x.createRadialGradient(px, py, 0, px, py, r); g.addColorStop(0, 'rgba(60,140,60,0.55)'); g.addColorStop(1, 'rgba(60,140,60,0)'); x.fillStyle = g; x.fillRect(px - r, py - r, r * 2, r * 2); } }),
+  pearl: () => tileFloor(512, 141, 0xd8c6b4, '#a38f7a', null, (x, S, rand) => { for (let i = 0; i < 90; i++) { const px = rand() * S, py = rand() * S, r = 4 + rand() * 10; x.fillStyle = `hsla(${180 + rand() * 160},70%,85%,0.28)`; x.beginPath(); x.arc(px, py, r, 0, 6.28); x.fill(); } }),
+  flag: () => tileFloor(512, 81, 0xb9afc6, '#7a6f88', null),
+  slate: () => tileFloor(512, 91, 0xa3c3d6, '#5f8299', '#46d8ff'),
+  ember: () => tileFloor(512, 99, 0xc4a089, '#7e503c', '#ff6a2a'),
 };
 
 // ---------------------------------------------------------------- utility textures
@@ -317,4 +374,17 @@ export function shadingTextures() {
     x.putImageData(img, 0, 0);
   });
   return { aoH, aoV, shaft };
+}
+
+/** Turn arrow pointing LEFT. `plate` = orange sign board (for walls); otherwise a bare painted arrow (for the floor). */
+export function arrowTexture(plate) {
+  const S = 256, c = canvas(S), x = c.getContext('2d');
+  if (plate) {
+    x.fillStyle = '#ff7a1a'; x.beginPath(); x.roundRect(8, 8, S - 16, S - 16, 34); x.fill();
+    x.strokeStyle = '#fff3d0'; x.lineWidth = 10; x.stroke();
+  }
+  x.fillStyle = plate ? '#ffffff' : '#ff7a1a'; x.strokeStyle = plate ? '#ffffff' : '#fff3d0'; x.lineWidth = plate ? 0 : 10; x.lineJoin = 'round';
+  x.beginPath(); x.moveTo(48, 128); x.lineTo(124, 52); x.lineTo(124, 100); x.lineTo(208, 100); x.lineTo(208, 156); x.lineTo(124, 156); x.lineTo(124, 204); x.closePath();
+  if (!plate) x.stroke(); x.fill();
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8; return t;
 }

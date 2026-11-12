@@ -33,12 +33,13 @@ export async function push() {
 /** Debounced upload after every local save. */
 export function init() {
   Store.onSave(() => { clearTimeout(timer); timer = setTimeout(push, 2500); });
+  document.addEventListener('visibilitychange', () => { if (document.hidden) push(); });      // flush when the player leaves the game
   const s = Store.get();
   if (s.best > 0 || s.coins > 0 || s.totalRuns > 0) push();      // make sure existing players are backed up too
 }
 
-export async function leaderboard() {
-  const r = await fetch(`/api/leaderboard?id=${playerId()}`, { cache: 'no-store' });
+export async function leaderboard(limit = 50) {
+  const r = await fetch(`/api/leaderboard?id=${playerId()}&limit=${limit}`, { cache: 'no-store' });
   if (!r.ok) throw new Error('unavailable');
   return r.json();
 }

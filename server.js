@@ -58,7 +58,8 @@ async function api(req, res, url) {
   if (req.method === 'GET' && p === '/api/leaderboard') {
     const id = url.searchParams.get('id');
     const all = Object.entries(db).filter(([, v]) => v.best > 0).sort((a, b) => b[1].best - a[1].best || b[1].distance - a[1].distance);
-    const top = all.slice(0, 20).map(([k, v]) => ({ name: v.name || 'Runner', best: v.best, distance: v.distance, me: k === id }));
+    const limit = Math.max(1, Math.min(50, Number(url.searchParams.get('limit')) || 20));
+    const top = all.slice(0, limit).map(([k, v]) => ({ name: v.name || 'Runner', best: v.best, distance: v.distance, me: k === id }));
     const rank = id && UUID.test(id) ? all.findIndex(([k]) => k === id) + 1 : 0;
     return json(res, 200, { top, rank: rank || null, players: all.length });
   }

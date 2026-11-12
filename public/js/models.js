@@ -112,7 +112,7 @@ export function makeSharedMaterials(glowTex, runeTex) {
     spikeRed: solid(0xff1f3d, 0.5, 0.35, 0.2), white: solid(0xffffff, 0.3, 0.4),
     gateFace: new THREE.MeshBasicMaterial({ map: gateTexture() }),
     glowTex, runeTex,
-    glowSprite: (color, opacity = 0.85) => new THREE.SpriteMaterial({ map: glowTex, color, transparent: true, opacity: opacity * 0.55, depthWrite: false }),
+    glowSprite: (color, opacity = 0.85) => new THREE.SpriteMaterial({ map: glowTex, color, transparent: true, opacity: opacity * 0.38, depthWrite: false }),
   };
 }
 

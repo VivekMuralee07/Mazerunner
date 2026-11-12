@@ -1,8 +1,9 @@
 // Endless procedural labyrinth corridor, obstacle patterns, coins and pick-ups.
-// Track coordinate `s` grows forward; world z of anything = -(s - dist). The player stays at z = 0.
+// Track coordinate `s` grows along the path. Objects live in their leg's frame (see track.js); only `root` moves each frame.
 import * as THREE from 'three';
 import { LANES, SEG_LEN, VIEW_AHEAD, KEEP_BEHIND, BIOME_LEN, BIOMES, CORRIDOR_HALF, PLAYER, POWERUPS } from './config.js';
 import * as M from './models.js';
+import { Track, CORNER_HALF } from './track.js';
 
 export function mulberry(seed) {
   let a = seed >>> 0;
@@ -19,9 +20,7 @@ export class World {
   constructor(scene, biomeMats, S, textures) {
     this.scene = scene; this.BM = biomeMats; this.S = S; this.tex = textures;
     this.root = new THREE.Group(); scene.add(this.root);
-    this.segRoot = new THREE.Group(); this.root.add(this.segRoot);
-    this.obstacleRoot = new THREE.Group(); this.root.add(this.obstacleRoot);
-    this.pickupRoot = new THREE.Group(); this.root.add(this.pickupRoot);
+    this.tmpV = new THREE.Vector3();
 
     this.leafMat = new THREE.MeshStandardMaterial({ color: 0x2f8a3d, roughness: 0.95, flatShading: true });
     this.rubbleMat = new THREE.MeshStandardMaterial({ color: 0x4a4458, roughness: 1, flatShading: true });
@@ -38,10 +37,12 @@ export class World {
     // soft ambient-occlusion gradients (wall bases, floor edges) and sun shafts
     this.aoFloorMat = new THREE.MeshBasicMaterial({ map: textures.aoH, transparent: true, opacity: 0.55, depthWrite: false });
     this.aoWallMat = new THREE.MeshBasicMaterial({ map: textures.aoV, transparent: true, opacity: 0.6, depthWrite: false });
-    this.shaftMat = new THREE.MeshBasicMaterial({ map: textures.shaft, transparent: true, opacity: 0.5, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, color: 0xfff0c8 });
+    this.shaftMat = new THREE.MeshBasicMaterial({ map: textures.shaft, transparent: true, opacity: 0.2, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, color: 0xfff0c8 });
     this.aoFloorGeo = new THREE.PlaneGeometry(1.5, 1); this.aoFloorGeo.rotateX(-Math.PI / 2);
     this.rockMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9, flatShading: true });
     this.deco = {};
+    this.signMat = new THREE.MeshBasicMaterial({ map: textures.signArrow, transparent: true });
+    this.floorArrowMat = new THREE.MeshBasicMaterial({ map: textures.floorArrow, transparent: true, depthWrite: false, opacity: 0.9 });
 
     // a few real lights hop between the nearest torches
     this.torchLights = [];
@@ -56,7 +57,9 @@ export class World {
     this.rand = mulberry(seed);
     this.dist = dist;
     this.segments = []; this.torches = [];
-    this.nextSeg = Math.floor((dist - KEEP_BEHIND) / SEG_LEN);
+    if (this.track) this.track.dispose();
+    this.track = new Track(this.root, mulberry((seed ^ 0x51ed270b) >>> 0), dist);
+    this.cursor = { k: this.track.legs[0].k, s: this.track.legs[0].segStart };
     this.solids = []; this.coins = []; this.pickups = [];
     this.spawnS = dist + 70;           // first obstacle row: generous run-up
     this.path = 1; this.busy = [-1e9, -1e9, -1e9]; this.prevOcc = [true, true, true];
@@ -67,15 +70,15 @@ export class World {
   }
 
   clearAll() {
-    for (const c of [this.segRoot, this.obstacleRoot, this.pickupRoot]) while (c.children.length) c.remove(c.children[0]);
+    if (this.track) { this.track.dispose(); this.track = null; }
     if (this.coinMesh) this.coinMesh.count = this.coinRim.count = 0;
   }
 
   // ---------------------------------------------------------------- segments
-  buildSegment(idx) {
-    const s0 = idx * SEG_LEN, biome = biomeAt(s0 + SEG_LEN / 2), m = this.BM[biome.id];
-    const rand = mulberry(idx * 7919 + 13);
-    const g = new THREE.Group(); g.userData = { s0, biome: biome.id };
+  buildSegment(leg, s0) {
+    const biome = biomeAt(s0 + SEG_LEN / 2), m = this.BM[biome.id];
+    const rand = mulberry(Math.floor(s0 * 13) + 7919);
+    const g = new THREE.Group(); g.userData = { s0, s1: s0 + SEG_LEN, biome: biome.id, leg };
     const S = this.S;
     const add = (o) => { g.add(o); return o; };
     const at = (o, x, y, z) => { o.position.set(x, y, z); return o; };
@@ -123,7 +126,7 @@ export class World {
     for (const [side, z] of [[-1, 5.5 + rand() * 3], [1, 15 + rand() * 3]]) {
       if (openings[side] != null && Math.abs(z - openings[side] - 2.2) < 3) continue;
       const t = M.buildTorch(S, biome.torch); t.position.set(side * (CORRIDOR_HALF - 0.12), 3, -z); add(t);
-      this.torches.push({ s: s0 + z, x: side * (CORRIDOR_HALF - 0.8), obj: t, color: biome.torch });
+      this.torches.push({ s: s0 + z, leg, lx: side * (CORRIDOR_HALF - 0.8), ly: 3.4, lz: -(s0 + z - leg.a), obj: t, color: biome.torch });
     }
 
     // overhead arch + hanging things
@@ -139,7 +142,9 @@ export class World {
         const z = rand() * SEG_LEN, x = side * (CORRIDOR_HALF - 0.45 - rand() * 0.2);
         if (openings[side] != null && z > openings[side] - 1 && z < openings[side] + 5.4) continue;
         let d = null;
-        if (biome.id === 'hedge') { d = M.buildBush(this.leafMat, 0.5 + rand() * 0.45); }
+        const bm = this.bushMat(biome.id);
+        if (bm) { d = M.buildBush(bm, 0.5 + rand() * 0.45 + (biome.id === 'jungle' ? 0.3 : 0)); }
+        else if (biome.id === 'coral') { d = M.buildCrystalCluster([0xff7f9a, 0xff9a5a, 0x3cc9bd, 0xffb3c7][Math.floor(rand() * 4)], 0.6 + rand() * 0.5); }
         else if (biome.id === 'stone') { d = new THREE.Group(); for (let k = 0; k < 3; k++) { const r = new THREE.Mesh(M.boxGeo(0.3 + rand() * 0.4, 0.25 + rand() * 0.35, 0.3 + rand() * 0.4), this.rubbleMat); r.position.set((rand() - 0.5) * 0.7, 0.15, (rand() - 0.5) * 0.9); r.rotation.set(rand(), rand() * 3, rand()); r.castShadow = true; d.add(r); } }
         else if (biome.id === 'crystal') { d = M.buildCrystalCluster(rand() > 0.5 ? 0x4cd9ff : 0xb36bff, 0.7 + rand() * 0.5); }
         else { d = new THREE.Group(); const sp = new THREE.Mesh(new THREE.ConeGeometry(0.22, 1.1 + rand(), 5), this.rubbleMat); sp.position.y = 0.55; sp.castShadow = true; d.add(sp); const e = new THREE.Sprite(S.glowSprite(0xff5a1f, 0.7)); e.scale.set(2.2, 2.2, 1); e.position.y = 0.3; d.add(e); }
@@ -147,14 +152,15 @@ export class World {
       }
     }
     this.addWallDecor(g, biome, rand, openings);
+    this.addScatter(g, biome, rand, openings);
     if (rand() < 0.45) {                                   // sun shafts slanting into the corridor
       for (let k = 0; k < 2; k++) {
         const sh = new THREE.Mesh(this.shaftGeo || (this.shaftGeo = new THREE.PlaneGeometry(3.2, 11)), this.shaftMat);
         sh.position.set(-1.6 + k * 1.2, 4.4, -(3 + rand() * 18)); sh.rotation.set(0, (rand() - 0.5) * 0.4, 0.55); add(sh);
       }
     }
-    g.position.z = -(s0 - this.dist);
-    this.segRoot.add(g);
+    g.position.z = -(s0 - leg.a);
+    leg.group.add(g);
     return g;
   }
 
@@ -163,12 +169,22 @@ export class World {
     const D = this.deco, items = [], wallH = 7.2;
     const ok = (side, z) => openings[side] == null || z < openings[side] - 0.8 || z > openings[side] + 5.2;
     let geo, mat, colors = null;
-    if (biome.id === 'hedge') {
+    const FAM = {
+      hedge: { cols: [0x2f9a3c, 0x3cb04d, 0x4cc85e, 0x63da70, 0x27843a], top: 1, big: 1 },
+      blossom: { cols: [0xffc2d8, 0xffa6c6, 0xff8fb8, 0xffe0ec, 0xffd0e0, 0x7bd882], top: 1.25, big: 1.25 },
+      autumn: { cols: [0xe0701a, 0xf08a24, 0xd44a1a, 0xf2b134, 0xb8381a, 0xc25a1a], top: 1.1, big: 1.1 },
+      jungle: { cols: [0x2f8a3c, 0x27733a, 0x3aa04a, 0x1f5f30, 0x56b85a], top: 1.5, big: 1.4 },
+    }[biome.id];
+    if (biome.id === 'coral') {
+      geo = D.coralGeo || (D.coralGeo = new THREE.ConeGeometry(0.34, 1, 6)); mat = D.coralMat || (D.coralMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.55, flatShading: true }));
+      colors = [0xff7f9a, 0xff9a5a, 0xf2547d, 0x3cc9bd, 0xffb3c7, 0xffd166];
+      for (const side of [-1, 1]) for (let i = 0; i < 16; i++) { const z = rand() * 24, h = 1 + rand() * 2.6; if (ok(side, z)) items.push({ x: side * (CORRIDOR_HALF + 0.4 + rand() * 0.9), y: wallH + 0.3 + h / 2, z: -z, sx: 0.8 + rand() * 0.8, sy: h, sz: 0.8 + rand() * 0.8, ry: rand() * 6, tilt: (rand() - 0.5) * 0.5 }); }
+    } else if (FAM) {
       geo = D.hedgeGeo || (D.hedgeGeo = new THREE.IcosahedronGeometry(0.55, 1)); mat = D.hedgeMat || (D.hedgeMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.95, flatShading: true }));
-      colors = [0x2f9a3c, 0x3cb04d, 0x4cc85e, 0x63da70, 0x27843a];
+      colors = FAM.cols;
       for (const side of [-1, 1]) {
-        for (let i = 0; i < 26; i++) { const z = rand() * 24; if (ok(side, z)) items.push({ x: side * (CORRIDOR_HALF - 0.06), y: 0.5 + rand() * 6.3, z: -z, sx: 0.5, sy: 0.7 + rand() * 0.7, sz: 0.8 + rand() * 0.8, side }); }
-        for (let i = 0; i < 10; i++) { const z = (i + rand() * 0.6) * 2.4; if (ok(side, z)) items.push({ x: side * (CORRIDOR_HALF + 0.8), y: wallH + 0.35, z: -z, sx: 1.5, sy: 1.1 + rand() * 0.5, sz: 1.7, side }); }
+        for (let i = 0; i < 26; i++) { const z = rand() * 24; if (ok(side, z)) items.push({ x: side * (CORRIDOR_HALF - 0.06), y: 0.5 + rand() * 6.3, z: -z, sx: 0.5, sy: (0.7 + rand() * 0.7) * FAM.big, sz: (0.8 + rand() * 0.8) * FAM.big, side }); }
+        for (let i = 0; i < 10; i++) { const z = (i + rand() * 0.6) * 2.4; if (ok(side, z)) items.push({ x: side * (CORRIDOR_HALF + 0.8), y: wallH + 0.35, z: -z, sx: 1.5 * FAM.top, sy: (1.1 + rand() * 0.5) * FAM.top, sz: 1.7 * FAM.top, side }); }
       }
     } else if (biome.id === 'stone') {
       geo = D.merlonGeo || (D.merlonGeo = new THREE.BoxGeometry(1.1, 0.85, 1.5)); mat = D.merlonMat || (D.merlonMat = new THREE.MeshStandardMaterial({ color: 0xcdb99c, roughness: 0.9 }));
@@ -191,6 +207,39 @@ export class World {
     im.castShadow = true; im.receiveShadow = true; g.add(im);
   }
 
+  bushMat(id) {
+    const cols = { hedge: 0x2f8a3d, blossom: 0xff9fc0, autumn: 0xe0701a, jungle: 0x1f6f35 };
+    if (!cols[id]) return null;
+    this.bushMats = this.bushMats || {};
+    return this.bushMats[id] || (this.bushMats[id] = new THREE.MeshStandardMaterial({ color: cols[id], roughness: 0.95, flatShading: true }));
+  }
+
+  /** Small scattered props along the edges of the path: flowers, pebbles, mushrooms, shells. One instanced draw call per segment. */
+  addScatter(g, biome, rand, openings) {
+    const D = this.deco, N = 16;
+    const SET = {
+      hedge: { cols: [0xffe14a, 0xffffff, 0xff7fb0, 0xb48cff], s: [0.09, 0.16], sy: 1 },
+      blossom: { cols: [0xffc2d8, 0xffffff, 0xff8fb8], s: [0.1, 0.18], sy: 0.35 },
+      stone: { cols: [0x8d826f, 0xa89c86, 0x6f6658], s: [0.12, 0.26], sy: 0.6 },
+      autumn: { cols: [0xe0701a, 0xf2a23a, 0xc4411a, 0x9a3a14], s: [0.12, 0.24], sy: 0.35 },
+      crystal: { cols: [0xcdeeff, 0xffffff, 0x9fd8ff], s: [0.1, 0.2], sy: 1.8 },
+      jungle: { cols: [0xe8452d, 0xf6f0d8, 0xffc23a], s: [0.12, 0.22], sy: 0.7 },
+      lava: { cols: [0x6a4a3a, 0x8a5a44, 0xff6a2a], s: [0.12, 0.26], sy: 0.6 },
+      coral: { cols: [0xffffff, 0xffc2d4, 0xffe3a6, 0xa7eee6], s: [0.1, 0.2], sy: 0.8 },
+    }[biome.id];
+    if (!SET) return;
+    const geo = D.scatterGeo || (D.scatterGeo = new THREE.IcosahedronGeometry(1, 1)), mat = D.scatterMat || (D.scatterMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.7, flatShading: true }));
+    const im = new THREE.InstancedMesh(geo, mat, N * 2), d = this.dummy, c = new THREE.Color();
+    let n = 0;
+    for (const side of [-1, 1]) for (let i = 0; i < N; i++) {
+      const z = rand() * SEG_LEN; if (openings[side] != null && z > openings[side] - 1 && z < openings[side] + 5.4) continue;
+      const sz = SET.s[0] + rand() * (SET.s[1] - SET.s[0]);
+      d.position.set(side * (CORRIDOR_HALF - 0.25 - rand() * 0.55), sz * SET.sy * 0.6, -z); d.rotation.set(0, rand() * 6, 0); d.scale.set(sz, sz * SET.sy, sz); d.updateMatrix();
+      im.setMatrixAt(n, d.matrix); c.setHex(SET.cols[Math.floor(rand() * SET.cols.length)]); im.setColorAt(n, c); n++;
+    }
+    im.count = n; im.receiveShadow = true; g.add(im);
+  }
+
   buildAlcove(g, side, oz, gapW, wallH, wallT, biome, m, rand) {
     const S = this.S, depth = 9, xIn = CORRIDOR_HALF + wallT, zc = -(oz + gapW / 2);
     const lintel = new THREE.Mesh(M.boxGeo(wallT, 2.3, gapW), m.wall); lintel.position.set(side * (CORRIDOR_HALF + wallT / 2), wallH - 1.15, zc); lintel.castShadow = true; g.add(lintel);
@@ -205,7 +254,7 @@ export class World {
     // glowing "way onward" portal on the back wall + a torch inside
     const portal = new THREE.Sprite(S.glowSprite(biome.accent, 0.8)); portal.scale.set(4.5, 5.5, 1); portal.position.set(side * (xIn + depth - 0.4), 2.6, zc); g.add(portal);
     const t = M.buildTorch(S, biome.torch); t.position.set(side * (xIn + 0.6), 2.6, zc - gapW / 2 - 0.1); g.add(t);
-    this.torches.push({ s: g.userData.s0 + oz + gapW / 2, x: side * (xIn + 1), obj: t, color: biome.torch, noLight: true });
+    this.torches.push({ s: g.userData.s0 + oz + gapW / 2, leg: g.userData.leg, lx: side * (xIn + 1), ly: 2.6, lz: -(g.userData.s0 + oz + gapW / 2 - g.userData.leg.a), obj: t, color: biome.torch, noLight: true });
     if (rand() < 0.7) {
       const st = biome.id === 'crystal' ? M.buildCrystalCluster(0xb36bff, 1.3) : M.buildStatue(m.trim);
       st.position.set(side * (xIn + depth - 2), 0, zc); st.rotation.y = side > 0 ? Math.PI / 2 : -Math.PI / 2; g.add(st);
@@ -219,9 +268,10 @@ export class World {
       const br = new THREE.Mesh(M.boxGeo(1.7, 0.55, 0.9), m.trim); br.position.set(sx * 3.2, y - 0.9, z); br.rotation.z = sx * Math.PI / 4; g.add(br);
     }
     const lan = M.buildLantern(S, biome.torch); lan.position.set(0, y - 0.5, z); g.add(lan);
-    this.torches.push({ s: g.userData.s0 - z, x: 0, y: y - 0.7, obj: lan, color: biome.torch, lantern: true });
-    if (biome.id === 'hedge') {
-      for (let i = 0; i < 7; i++) { const l = 0.8 + rand() * 2.2; const v = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.025, l, 5), this.leafMat); v.position.set((rand() - 0.5) * 8, y - 0.45 - l / 2, z + (rand() - 0.5) * 0.6); g.add(v); }
+    this.torches.push({ s: g.userData.s0 - z, leg: g.userData.leg, lx: 0, ly: y - 0.7, lz: -(g.userData.s0 - z - g.userData.leg.a), obj: lan, color: biome.torch, lantern: true });
+    const vm = this.bushMat(biome.id);
+    if (vm) {
+      for (let i = 0; i < (biome.id === 'jungle' ? 14 : 7); i++) { const l = 0.8 + rand() * 2.2; const v = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.025, l, 5), biome.id === 'jungle' ? this.leafMat : vm); v.position.set((rand() - 0.5) * 8, y - 0.45 - l / 2, z + (rand() - 0.5) * 0.6); g.add(v); }
     } else if (biome.id === 'crystal') {
       for (let i = 0; i < 6; i++) { const l = 0.8 + rand() * 1.4; const c = new THREE.Mesh(new THREE.ConeGeometry(0.16, l, 5), new THREE.MeshStandardMaterial({ color: 0x113a55, emissive: 0x4cd9ff, emissiveIntensity: 0.9, flatShading: true })); c.rotation.x = Math.PI; c.position.set((rand() - 0.5) * 8, y - 0.45 - l / 2, z); g.add(c); }
     }
@@ -236,8 +286,9 @@ export class World {
     else if (type === 'wall') { group = M.buildWall(BMm, S); len = 1.1; H = WALL_H; }
     else { ramp = opts.ramp ? RAMP_LEN : 0; len = ramp + opts.body; H = BLOCK_H; group = M.buildBlock(BMm, S, H, len, ramp); }
     const solid = { type, lane, x: LANES[lane], s0, s1: s0 + len, H, ramp, hw: 1.0, group, ghost: false, yBot: 0.95, yTop: 2.25 };
-    group.position.set(solid.x, 0, -(s0 - this.dist));
-    this.obstacleRoot.add(group);
+    const leg = this.track.legAt(s0); solid.leg = leg;
+    group.position.set(solid.x, 0, -(s0 - leg.a));
+    leg.group.add(group);
     this.solids.push(solid);
     return solid;
   }
@@ -255,7 +306,7 @@ export class World {
       if (sd.ghost || sd.ignore || sd.s1 + PD < dist || sd.s0 - PD > dist) continue;
       const dx = Math.abs(px - sd.x);
       if (dx >= sd.hw + PW) continue;
-      if (sd.type === 'boulder') { if (py < sd.H - 0.2) hits.push({ sd, kind: 'front' }); continue; }
+      if (sd.type === 'boulder' || sd.isCornerWall) { if (py < sd.H - (sd.isCornerWall ? 0.05 : 0.2)) hits.push({ sd, kind: 'front' }); continue; }
       if (sd.type === 'high') {
         if (py < sd.yTop && py + ph > sd.yBot) hits.push({ sd, kind: dx > sd.hw - 0.2 || sd.lane === enteredLane || (ownLane >= 0 && sd.lane !== ownLane) ? 'side' : 'front' });
         continue;
@@ -271,11 +322,50 @@ export class World {
   addBoulder(lane, s0, speed) {
     const group = M.buildBoulder(this.S);
     const sd = { type: 'boulder', lane, x: LANES[lane], s0, s1: s0 + 2.5, H: 2.8, ramp: 0, hw: 1.0, group, ghost: false, boulderSpeed: speed, locked: false, yBot: 0, yTop: 0, dust: 0 };
-    group.position.set(sd.x, 0, -(s0 - this.dist));
-    this.obstacleRoot.add(group); this.solids.push(sd);
+    const leg = this.track.legAt(s0); sd.leg = leg;
+    group.position.set(sd.x, 0, -(s0 - leg.a));
+    leg.group.add(group); this.solids.push(sd);
     return sd;
   }
   hasBoulder() { return this.solids.some((sd) => sd.type === 'boulder' && !sd.ghost && sd.s1 > this.dist - 6); }
+
+  /** Invisible fatal wall at the end of a corner square: you have to turn before you reach it. */
+  addCornerWall(c) {
+    const sd = { type: 'wall', lane: 1, x: 0, hw: 4.4, s0: c.s + 3.3, s1: c.s + 3.9, H: 4.4, ramp: 0, group: new THREE.Group(), ghost: c.executed, isCornerWall: true, corner: c, yBot: 0, yTop: 0 };
+    c.wall = sd; this.solids.push(sd);
+  }
+
+  /** The 8 m x 8 m junction where the path turns 90°: outer walls, a big arrow sign and a painted floor arrow. */
+  buildCorner(leg, c) {
+    const biome = biomeAt(c.s), m = this.BM[biome.id], S = this.S, rand = mulberry(Math.floor(c.s * 13) + 4242);
+    const o = c.dir, wallH = 7.2, wallT = 1.6, H = CORNER_HALF;           // o: side of the outer wall (+1 = right, for a left turn)
+    const g = new THREE.Group(); g.userData = { s0: c.s - H, s1: c.s + H, biome: biome.id, leg, corner: true };
+    const add = (mesh) => { g.add(mesh); return mesh; };
+    const at = (mesh, x, y, z) => { mesh.position.set(x, y, z); return mesh; };
+    const floor = add(at(new THREE.Mesh(M.planeGeo(9.6, 9.6, 6), m.floor), o * 0.8, 0, -0.8)); floor.receiveShadow = true;
+    const ow = add(at(new THREE.Mesh(M.boxGeo(wallT, wallH, 2 * H), m.wall), o * (CORRIDOR_HALF + wallT / 2), wallH / 2, 0)); ow.castShadow = ow.receiveShadow = true;
+    add(at(new THREE.Mesh(M.boxGeo(wallT + 0.5, 0.45, 2 * H + 0.05), m.trim), o * (CORRIDOR_HALF + wallT / 2), wallH + 0.2, 0));
+    const fw = add(at(new THREE.Mesh(M.boxGeo(9.6, wallH, wallT), m.wall), o * 0.8, wallH / 2, -H - wallT / 2)); fw.castShadow = fw.receiveShadow = true;
+    add(at(new THREE.Mesh(M.boxGeo(10.1, 0.45, wallT + 0.5), m.trim), o * 0.8, wallH + 0.2, -H - wallT / 2));
+    add(at(new THREE.Mesh(M.boxGeo(2 * H, 0.55, 0.4), m.trim), 0, 0.27, -H + 0.15));
+    add(at(new THREE.Mesh(M.boxGeo(0.4, 0.55, 2 * H), m.trim), o * (CORRIDOR_HALF - 0.15), 0.27, 0));
+    // soft AO where walls meet the floor
+    const aoF = add(new THREE.Mesh(this.aoFloorGeo, this.aoFloorMat)); aoF.scale.set(o < 0 ? 1 : -1, 1, 2 * H); aoF.position.set(o * (CORRIDOR_HALF - 0.74), 0.025, 0);
+    const aoW = add(new THREE.Mesh(this.aoWallGeo || (this.aoWallGeo = new THREE.PlaneGeometry(1, 2.6)), this.aoWallMat)); aoW.scale.x = 2 * H; aoW.rotation.y = o > 0 ? -Math.PI / 2 : Math.PI / 2; aoW.position.set(o * (CORRIDOR_HALF - 0.03), 1.3, 0);
+    const aoF2 = add(new THREE.Mesh(this.aoWallGeo, this.aoWallMat)); aoF2.scale.x = 2 * H; aoF2.position.set(0, 1.3, -H + 0.03);
+    for (const [px, pz] of [[o * 3.7, H - 0.1], [o * 3.7, -H + 0.3], [-o * 3.7, -H + 0.3], [-o * 3.7, H - 0.1]]) add(at(new THREE.Mesh(M.boxGeo(0.7, wallH, 0.9), m.trim), px, wallH / 2, pz)).castShadow = true;
+    // sign + floor arrow, both pointing to the open side
+    const sign = add(at(new THREE.Mesh(new THREE.PlaneGeometry(3.4, 3.4), this.signMat), 0, 3.5, -H + 0.04)); if (o < 0) sign.scale.x = -1;
+    const mark = add(at(new THREE.Mesh(new THREE.PlaneGeometry(4.4, 4.4), this.floorArrowMat), 0, 0.035, -0.2)); mark.rotation.x = -Math.PI / 2; if (o < 0) mark.scale.x = -1;
+    for (const px of [-2.9, 2.9]) {
+      const t = M.buildTorch(S, biome.torch); t.position.set(px, 3, -H + 0.12); add(t);
+      this.torches.push({ s: c.s, leg, lx: px, ly: 3.4, lz: -(c.s - leg.a) - H + 0.4, obj: t, color: biome.torch });
+    }
+    g.position.z = -(c.s - leg.a);
+    leg.group.add(g); this.segments.push(g);
+    this.addCornerWall(c); c.built = true;
+    return g;
+  }
 
   /** Removes (ghosts) every obstacle in a range – used when reviving. */
   clearRange(a, b) {
@@ -287,14 +377,15 @@ export class World {
   // ---------------------------------------------------------------- coins & pick-ups
   addCoin(s, x, y, extra) {
     if (this.coins.length >= COIN_CAP - 2) return;
-    this.coins.push({ s, x, y, spin: Math.random() * 6, ...extra });
+    this.coins.push({ s, x, y, spin: Math.random() * 6, leg: this.track.legAt(s), ...extra });
   }
 
   addPickup(type, lane, s, y = 1.1) {
     const def = POWERUPS[type];
     const g = M.buildPowerup(type, def.color, this.S);
-    g.position.set(LANES[lane], y, -(s - this.dist));
-    this.pickupRoot.add(g);
+    const leg = this.track.legAt(s);
+    g.position.set(LANES[lane], y, -(s - leg.a));
+    leg.group.add(g);
     this.pickups.push({ type, s, x: LANES[lane], y, group: g, t: Math.random() * 6 });
   }
 
@@ -327,7 +418,11 @@ export class World {
    * wherever the player happens to be standing.
    */
   makeRow() {
-    const s = this.spawnS, R = this.rand, diff = clamp(s / 7000, 0, 1);
+    let s = this.spawnS;
+    for (const c of this.track.corners) {                  // keep corners clear: nothing within 36 m before or 16 m after
+      if (c.s - 36 < s + 26 && c.s + 16 > s) { this.spawnS = c.s + 16; this.prev = { s: this.spawnS, lane: this.path, type: null }; this.prevOcc = [true, true, true]; this.busy = [-1e9, -1e9, -1e9]; return; }
+    }
+    const R = this.rand, diff = clamp(s / 7000, 0, 1);
     const gap = clamp(this.speedHint * 0.95 + 9 - diff * 2, 18, 48) + R() * 8;
 
     // guide lane: where the coin trail leads (always left free)
@@ -408,7 +503,9 @@ export class World {
 
     // ---- power-up between rows
     this.sincePickup += gap; this.sinceJet += gap;
-    if (!this.flying && s > 250 && this.sinceJet > 3200 && R() < 0.4) {          // jetpacks are rare: roughly once per 3+ km
+    const pickS = s + gap * 0.5, nearCorner = this.track.corners.some((c) => Math.abs(c.s - pickS) < 14);
+    if (nearCorner) { /* keep the junction clear */ }
+    else if (!this.flying && s > 250 && this.sinceJet > 3200 && R() < 0.4) {          // jetpacks are rare: roughly once per 3+ km
       this.addPickup('jetpack', newPath, s + gap * 0.5);
       this.sinceJet = 0; this.sincePickup = 0;
     } else if (!this.flying && s > 250 && this.sincePickup > 650 && R() < 0.4) {
@@ -422,7 +519,7 @@ export class World {
   }
 
   stepBoulder(sd, dt, dist, speed) {
-    sd.s0 -= sd.boulderSpeed * dt; sd.s1 = sd.s0 + 2.5;
+    sd.s0 -= sd.boulderSpeed * dt; sd.s1 = sd.s0 + 2.5; sd.group.position.z = -(sd.s0 - sd.leg.a);
     const ahead = sd.s0 - dist;
     if (!sd.locked && ahead > 30) sd.x += clamp(this.targetX - sd.x, -3.6 * dt, 3.6 * dt);          // homing...
     else {                                                                                            // ...until the last moment
@@ -435,36 +532,50 @@ export class World {
     u.mark.material.opacity = ahead > 2 ? 0.5 + Math.sin(performance.now() * 0.012) * 0.35 : 0;
     u.mark.scale.y = clamp(ahead / 30, 0.05, 1); u.mark.position.z = 15 * u.mark.scale.y;
     for (const o of this.solids) {                                                                    // it flattens whatever is in its way
-      if (o === sd || o.ghost || o.type === 'boulder') continue;
+      if (o === sd || o.ghost || o.type === 'boulder' || o.isCornerWall) continue;
       if (o.s1 > sd.s0 && o.s0 < sd.s1 && Math.abs(o.x - sd.x) < 1.5) this.smash(o);
     }
   }
 
   // ---------------------------------------------------------------- per-frame
+  buildAhead(dist) {
+    const lim = dist + VIEW_AHEAD, T = this.track;
+    T.ensure(lim + 320);
+    for (let guard = 0; guard < 60 && this.cursor.s < lim; guard++) {
+      const leg = T.legs.find((l) => l.k === this.cursor.k);
+      if (!leg) break;
+      if (this.cursor.s + SEG_LEN <= leg.b - CORNER_HALF + 1e-6) { this.segments.push(this.buildSegment(leg, this.cursor.s)); this.cursor.s += SEG_LEN; }
+      else {
+        this.buildCorner(leg, leg.corner);
+        T.ensure(leg.b + 320);
+        const next = T.legs.find((l) => l.k === leg.k + 1);
+        this.cursor = { k: next.k, s: next.segStart };
+      }
+    }
+  }
+
   update(dt, dist, speed, time) {
     this.dist = dist;
     this.speedHint = speed;
-    // segments
-    while (this.nextSeg * SEG_LEN < dist + VIEW_AHEAD) this.segments.push(this.buildSegment(this.nextSeg++));
+    const T = this.track;
+    T.step(dt);
+    this.buildAhead(dist);
     while (this.spawnS < dist + VIEW_AHEAD - 20) this.makeRow();
     if (this.flying) this.spawnSkyCoins(dist);
+    T.applyPose(this.root, dist);                         // the player stays at the origin facing -z; the world moves round them
 
-    for (let i = 0; i < this.segments.length; i++) {
+    for (let i = this.segments.length - 1; i >= 0; i--) {
       const g = this.segments[i];
-      g.position.z = -(g.userData.s0 - dist);
+      if (g.userData.s1 < dist - KEEP_BEHIND) { g.removeFromParent(); this.segments.splice(i, 1); }
     }
-    while (this.segments.length && this.segments[0].userData.s0 + SEG_LEN < dist - KEEP_BEHIND) {
-      const g = this.segments.shift(); this.segRoot.remove(g);
-    }
+    T.prune(dist, KEEP_BEHIND + 40);
     this.torches = this.torches.filter((t) => t.s > dist - KEEP_BEHIND - 5);
 
     // solids
     for (let i = this.solids.length - 1; i >= 0; i--) {
       const sd = this.solids[i];
       if (sd.type === 'boulder' && !sd.ghost) this.stepBoulder(sd, dt, dist, speed);
-      const z = -(sd.s0 - dist);
-      if (sd.s1 < dist - 14) { this.obstacleRoot.remove(sd.group); this.solids.splice(i, 1); continue; }
-      sd.group.position.z = z;
+      if (sd.s1 < dist - 14) { sd.group.removeFromParent(); this.solids.splice(i, 1); continue; }
       if (sd.type === 'boulder') sd.group.position.x = sd.x;
       if (sd.smashT) {          // ghosted-by-shield obstacles shrink away
         sd.smashT += dt * 3;
@@ -474,48 +585,50 @@ export class World {
       } else if (sd.ghost) sd.group.visible = false;
     }
 
-    // coins -> instanced matrices
+    // coins -> instanced matrices (composed with their leg's transform)
     const d = this.dummy, im = this.coinMesh;
     let n = 0;
     for (let i = this.coins.length - 1; i >= 0; i--) { if (this.coins[i].s < dist - 12) this.coins.splice(i, 1); }
     for (const c of this.coins) {
       if (n >= COIN_CAP) break;
-      const z = -(c.s - dist);
-      if (z < -VIEW_AHEAD) continue;
-      d.position.set(c.x, c.y + Math.sin(time * 3 + c.spin) * 0.06, z);
+      if (c.s - dist > VIEW_AHEAD) continue;
+      d.position.set(c.x, c.y + Math.sin(time * 3 + c.spin) * 0.06, -(c.s - c.leg.a));
       d.rotation.set(0, time * 3.2 + c.spin, 0);
       d.scale.setScalar(c.scale || 1);
-      d.updateMatrix(); im.setMatrixAt(n, d.matrix); this.coinRim.setMatrixAt(n, d.matrix); n++;
+      d.updateMatrix(); d.matrix.premultiply(c.leg.group.matrix);
+      im.setMatrixAt(n, d.matrix); this.coinRim.setMatrixAt(n, d.matrix); n++;
     }
     im.count = this.coinRim.count = n; im.instanceMatrix.needsUpdate = this.coinRim.instanceMatrix.needsUpdate = true;
 
     // pickups
     for (let i = this.pickups.length - 1; i >= 0; i--) {
       const p = this.pickups[i];
-      if (p.s < dist - 12) { this.pickupRoot.remove(p.group); this.pickups.splice(i, 1); continue; }
+      if (p.s < dist - 12) { p.group.removeFromParent(); this.pickups.splice(i, 1); continue; }
       p.t += dt;
-      p.group.position.set(p.x, p.y + Math.sin(p.t * 3) * 0.14, -(p.s - dist));
+      p.group.position.y = p.y + Math.sin(p.t * 3) * 0.14;
       p.group.userData.ring.rotation.z += dt * 2.4;
       p.group.userData.halo.material.opacity = 0.7 + Math.sin(p.t * 5) * 0.2;
     }
 
-    // torch flicker + lights
-    const near = [];
+    // torch flicker + the few real lights that hop between the nearest torches
+    const near = [], v = this.tmpV;
     for (const t of this.torches) {
-      const z = -(t.s - dist);
       if (t.lantern) { t.obj.userData.glow.material.opacity = 0.75 + Math.sin(time * 4 + t.obj.userData.phase) * 0.12; }
       else {
         const u = t.obj.userData, f = 1 + Math.sin(time * 14 + u.phase) * 0.12 + Math.sin(time * 23 + u.phase * 2) * 0.08;
         u.flame.scale.set(f, 0.9 + (f - 1) * 3, f); u.glow.material.opacity = 0.8 + (f - 1) * 1.6;
       }
-      if (!t.noLight && z < 6 && z > -48) near.push(t);
+      if (t.noLight || Math.abs(t.s - dist) > 60) continue;
+      v.set(t.lx, t.ly, t.lz).applyMatrix4(t.leg.group.matrix).applyMatrix4(this.root.matrix);
+      t.wd = v.lengthSq(); t.wx = v.x; t.wy = v.y; t.wz = v.z;
+      if (t.wd < 55 * 55) near.push(t);
     }
-    near.sort((a, b) => Math.abs(a.s - dist - 8) - Math.abs(b.s - dist - 8));
+    near.sort((a, b) => a.wd - b.wd);
     this.torchLights.forEach((l, i) => {
       const t = near[i];
       if (!t) { l.intensity = 0; return; }
       l.color.set(t.color);
-      l.position.set(t.x, t.y !== undefined ? t.y : 3.4, -(t.s - dist));
+      l.position.set(t.wx, t.wy, t.wz);
       l.intensity = (t.lantern ? 4 : 6) * (0.92 + Math.sin(time * 13 + i * 2.1) * 0.08);
     });
   }

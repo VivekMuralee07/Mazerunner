@@ -38,7 +38,7 @@ export class Game {
 
     const renderer = this.renderer = new THREE.WebGLRenderer({ canvas: this.canvas, antialias: false, powerPreference: 'high-performance', alpha: false });
     renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFShadowMap;
-    renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 0.95;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 0.84;
     renderer.outputColorSpace = THREE.SRGBColorSpace;
 
     const scene = this.scene = new THREE.Scene();
@@ -48,13 +48,13 @@ export class Game {
     this.camera.position.set(0, 4.3, 7.4);
 
     // lights
-    this.hemi = new THREE.HemisphereLight(0xe6f4ff, 0xb8c79a, 1.3); scene.add(this.hemi);
+    this.hemi = new THREE.HemisphereLight(0xe6f4ff, 0xb8c79a, 1.0); scene.add(this.hemi);
     this.sun = new THREE.DirectionalLight(0xbfe6ff, 1.5); this.sun.position.set(-9, 20, 8); this.sun.target.position.set(0, 0, -14);
     this.sun.castShadow = true;
     const sc = this.sun.shadow.camera; sc.left = -13; sc.right = 13; sc.top = 40; sc.bottom = -26; sc.near = 1; sc.far = 70;
     this.sun.shadow.bias = -0.0006; this.sun.shadow.normalBias = 0.04; this.sun.shadow.radius = 3; this.sun.shadow.blurSamples = 10;
     scene.add(this.sun, this.sun.target);
-    this.fill = new THREE.DirectionalLight(0xffe6c8, 0.5); this.fill.position.set(6, 5, 12); scene.add(this.fill);
+    this.fill = new THREE.DirectionalLight(0xffe6c8, 0.3); this.fill.position.set(6, 5, 12); scene.add(this.fill);
 
     this.sky = buildSky(BIOMES[0].skyTop, BIOMES[0].skyBottom); scene.add(this.sky);
     const moon = new THREE.Sprite(new THREE.SpriteMaterial({ map: Tex.glowTexture('rgba(255,255,255,1)', 'rgba(255,240,200,0)'), color: 0xfff2c4, fog: false, depthWrite: false, transparent: true }));
@@ -64,11 +64,11 @@ export class Game {
     const rt = new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType, samples: 4 });
     this.composer = new EffectComposer(renderer, rt);
     this.composer.addPass(new RenderPass(scene, this.camera));
-    this.bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.22, 0.5, 0.98);
+    this.bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.07, 0.35, 1.05);
     this.composer.addPass(this.bloom);
     this.composer.addPass(new OutputPass());
     this.grade = new ShaderPass({
-      uniforms: { tDiffuse: { value: null }, sat: { value: 1.14 }, contrast: { value: 1.07 }, vig: { value: 0.22 }, warm: { value: 0.025 } },
+      uniforms: { tDiffuse: { value: null }, sat: { value: 1.1 }, contrast: { value: 1.12 }, vig: { value: 0.3 }, warm: { value: 0.012 } },
       vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
       fragmentShader: `uniform sampler2D tDiffuse; uniform float sat, contrast, vig, warm; varying vec2 vUv;
         void main(){ vec4 c = texture2D(tDiffuse, vUv); float l = dot(c.rgb, vec3(0.2126, 0.7152, 0.0722));
@@ -85,11 +85,11 @@ export class Game {
     await new Promise((r) => setTimeout(r, 10));
     const glowTex = Tex.glowTexture();
     this.S = Models.makeSharedMaterials(glowTex, null);
-    this.tex = { glow: glowTex, laneRune: Tex.laneRuneTexture(), coin: Tex.coinTexture(), ...Tex.shadingTextures() };
+    this.tex = { glow: glowTex, laneRune: Tex.laneRuneTexture(), coin: Tex.coinTexture(), signArrow: Tex.arrowTexture(true), floorArrow: Tex.arrowTexture(false), ...Tex.shadingTextures() };
     // image-based lighting: a PMREM of the daytime sky gives every PBR surface believable ambient light and sheen
     const pm = new THREE.PMREMGenerator(renderer), envScene = new THREE.Scene(), envSky = buildSky(0x5aa9ff, 0xf1f8ff);
     envSky.material.uniforms.time.value = 3; envScene.add(envSky);
-    scene.environment = pm.fromScene(envScene, 0, 0.1, 1000).texture; scene.environmentIntensity = 0.55; pm.dispose();
+    scene.environment = pm.fromScene(envScene, 0, 0.1, 1000).texture; scene.environmentIntensity = 0.38; pm.dispose();
     // distant hills give the horizon some depth
     this.hills = [];
     for (const [rad, h, col] of [[330, 55, 0.5], [300, 38, 0.3]]) {
@@ -211,6 +211,10 @@ export class Game {
     if (this.state === STATE.MENU && a === 'touch') return;
     if (this.state !== STATE.RUNNING && this.state !== STATE.COUNTDOWN) return;
     const p = this.player;
+    if ((a === 'left' || a === 'right') && this.state === STATE.RUNNING) {          // at a corner, swiping the way the arrow points turns
+      const c = this.world.track.nextCorner(this.dist);
+      if (c && !c.executed && c.s - this.dist < 22 && this.dist < c.s + 3.2 && a === (c.dir > 0 ? 'left' : 'right')) { c.accepted = true; return; }
+    }
     if (a === 'left' || a === 'right') {
       if (p.moveLane(a === 'left' ? -1 : 1)) { this.stats.lanes++; Audio.sfx.lane(); }
     } else if (a === 'jump') p.jump();
@@ -301,6 +305,7 @@ export class Game {
     this.handleHits(res.hits);
     if (this.state !== STATE.RUNNING) return;
 
+    this.updateCorners();
     this.collect(prev, dt);
     this.chaser.update(dt, sp, p.x);
     this.growlT -= dt;
@@ -344,6 +349,7 @@ export class Game {
       if (p.invuln > 0 && h.kind === 'front') continue;
       if (this.shield) { this.breakShield(sd); return; }
       if (sd.type === 'boulder') { this.die('boulder'); return; }
+      if (sd.isCornerWall) { this.die('turn'); return; }
       const fatal = h.kind === 'front' && (sd.type === 'wall' || sd.type === 'block');
       if (fatal) { this.die('crash'); return; }
       if (h.kind === 'side') {
@@ -367,13 +373,32 @@ export class Game {
     else { Audio.sfx.roar(); this.ui.toast('The Minotaur is right behind you!', 'warn'); this.growlT = 1.5; }
   }
 
+  /** Corners: execute accepted turns, auto-turn while flying, and never leave the camera facing a wall. */
+  updateCorners() {
+    const T = this.world.track, p = this.player, c = T.nextCorner(this.dist);
+    if (!c || c.executed) { this.ui.setTurn(0, 0); return; }
+    const auto = p.flying || this.autoTurn;
+    if ((c.accepted || auto) && this.dist >= c.s - 1.5) this.doTurn(c);
+    else if (this.dist > c.s + 3.2) this.doTurn(c);                                // safety net (shield, invulnerability)
+    else this.ui.setTurn(c.dir, c.s - this.dist, c.accepted);
+  }
+
+  doTurn(c) {
+    this.world.track.execute(c);
+    Audio.sfx.turn(); this.shake = Math.max(this.shake, 0.18);
+    this.stats.turns = (this.stats.turns || 0) + 1;
+    this.particles.burst(this.player.x, 0.4, 0, 14, this.dustColor || 0xaa9988, 4, 0.5, 0.3, 2);
+    this.ui.setTurn(0, 0);
+  }
+
   /** Random, homing boulder: warns, rolls toward the player's lane, locks on late, flattens anything in its way. */
   updateBoulder(dt, sp) {
     const p = this.player, w = this.world;
     this.boulderT -= dt;
-    if (this.boulderT <= 0 && !p.flying && !this.boulder && this.dist > 300 && this.state === STATE.RUNNING) {
+    const spawnS = this.dist + 80 + sp * 1.5, cornerNear = this.world.track.corners.some((c) => !c.executed && c.s < spawnS + 16 && c.s + 8 > this.dist - 4);
+    if (this.boulderT <= 0 && !p.flying && !this.boulder && !cornerNear && this.dist > 300 && this.state === STATE.RUNNING) {
       const diff = clamp(this.dist / 6000, 0, 1);
-      this.boulder = w.addBoulder(p.target, this.dist + 80 + sp * 1.5, 13 + diff * 7);
+      this.boulder = w.addBoulder(p.target, spawnS, 13 + diff * 7);
       this.boulderT = 24 + Math.random() * 20 - diff * 8;
       this.ui.toast('⚠ BOULDER! Get out of its lane!', 'warn'); this.ui.flash('rgba(255,140,40,0.25)');
       Audio.sfx.rumble(); this.shake = Math.max(this.shake, 0.35);
@@ -402,6 +427,7 @@ export class Game {
   breakShield(sd) {
     this.shield = false; this.player.invuln = 1.6; this.player.flash = 0.25;
     this.world.smash(sd);
+    if (sd.isCornerWall) this.doTurn(sd.corner);
     Audio.sfx.shieldBreak();
     this.particles.burst(this.player.x, 1, 0, 30, 0xb388ff, 6, 0.8, 0.22, 2);
     this.shake = Math.max(this.shake, 0.4);
@@ -468,7 +494,7 @@ export class Game {
     p.dead = false; p.caught = false; p.model.rotation.set(0, 0, 0); p.model.position.set(0, 0, 0); p.rollT = 0; p.vy = 0;
     p.stumbleT = 0; p.invuln = 3; p.y = 0; p.lane = p.target = 1; p.prevLane = 1; p.x = LANES[1]; p.grounded = true; p.flash = 0;
     this.chaser.state = 'far'; this.chaser.nearT = 0; this.chaser.z = 14;
-    this.world.clearRange(this.dist - 6, this.dist + 70);
+    this.world.clearRange(this.dist - 6, this.dist + 70); this.world.track.forceTurns(this.dist + 70);
     this.world.path = 1; this.world.busy = [-1e9, -1e9, -1e9]; this.world.prevOcc = [true, true, true];
     this.baseSpeed = Math.max(SPEED.start, this.baseSpeed * 0.85); this.speed = 0; this.slowT = 0;
     this.state = STATE.COUNTDOWN; this.countT = 0; this.countShown = 4; this.resuming = true;
@@ -508,7 +534,7 @@ export class Game {
       const q = pk[i];
       if (q.s < prevDist - 0.8 || q.s > this.dist + 0.9) continue;
       if (Math.abs(q.x - p.x) < 1.2 && Math.abs(q.y - cy) < 1.6) {
-        w.pickupRoot.remove(q.group); pk.splice(i, 1);
+        q.group.removeFromParent(); pk.splice(i, 1);
         this.grant(q.type, q.x, q.y);
       }
     }
@@ -572,7 +598,7 @@ export class Game {
     for (const h of this.hills) h.material.color.copy(fog).lerp(c('skyTop'), h.userData.mix).multiplyScalar(0.93);
     this.dustColor = c('trim').offsetHSL(0, -0.1, -0.1).getHex();
     const idx = t > 0.5 ? (bi + 1) % BIOMES.length : bi % BIOMES.length;
-    if (idx !== this.biomeIdx) { const mode = { hedge: [-0.5, 2.4, 0xb6d84a], stone: [0.12, 1.4, 0xffe3a6], crystal: [-0.35, 1.8, 0xffffff], lava: [0.55, 1.6, 0xff7a2a] }[BIOMES[idx].id]; this.ambient.setMode(mode[0], mode[1], mode[2]); this.biomeIdx = idx; this.ui.onBiome(BIOMES[idx], this.state === STATE.RUNNING && this.dist > 50); }
+    if (idx !== this.biomeIdx) { const mode = BIOMES[idx].mode; this.ambient.setMode(mode[0], mode[1], mode[2]); this.biomeIdx = idx; this.ui.onBiome(BIOMES[idx], this.state === STATE.RUNNING && this.dist > 50); }
   }
 
   render(dt) {
@@ -604,7 +630,8 @@ export class Game {
       cam.position.x += (Math.random() - 0.5) * s; cam.position.y += (Math.random() - 0.5) * s;
     }
     cam.lookAt(this.lookAt);
-    cam.rotation.z += -p.laneLean * 0.035;
+    const bank = this.world.track.thetaTarget - this.world.track.theta; p.bank = bank;
+    cam.rotation.z += -p.laneLean * 0.035 + clamp(bank, -1.2, 1.2) * 0.05;
     if (Math.abs(cam.fov - fov) > 0.01) { cam.fov += (fov - cam.fov) * damp(3, dt); cam.updateProjectionMatrix(); }
 
     // keep the shadow frustum glued to the player

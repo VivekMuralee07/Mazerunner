@@ -1,10 +1,10 @@
 // Service worker: makes the game installable and playable offline.
 // Strategy: stale-while-revalidate for same-origin GETs, so a new deploy shows up on the next launch.
-const CACHE = 'labyrinth-run-v2';
+const CACHE = 'labyrinth-run-v3';
 const SHELL = [
   '/', '/index.html', '/css/style.css', '/manifest.webmanifest',
   '/js/main.js', '/js/game.js', '/js/world.js', '/js/player.js', '/js/chaser.js', '/js/models.js', '/js/textures.js',
-  '/js/fx.js', '/js/audio.js', '/js/input.js', '/js/ui.js', '/js/missions.js', '/js/storage.js', '/js/config.js', '/js/cloud.js',
+  '/js/fx.js', '/js/audio.js', '/js/input.js', '/js/ui.js', '/js/missions.js', '/js/storage.js', '/js/config.js', '/js/cloud.js', '/js/track.js',
   '/vendor/three/three.module.js', '/vendor/three/three.core.js',
   '/vendor/three/addons/postprocessing/EffectComposer.js', '/vendor/three/addons/postprocessing/RenderPass.js',
   '/vendor/three/addons/postprocessing/UnrealBloomPass.js', '/vendor/three/addons/postprocessing/OutputPass.js',

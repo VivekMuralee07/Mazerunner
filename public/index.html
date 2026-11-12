@@ -41,6 +41,7 @@
     <button id="btnPause" class="iconbtn" aria-label="Pause">❚❚</button>
   </div>
   <div id="powerups"></div>
+  <div id="turnHint" class="hidden" data-dir="left"><span class="arrow">◀</span><span id="turnDist">0 m</span><small>swipe to turn</small></div>
   <div id="biomeBanner"></div>
   <div id="countdown"></div>
   <div id="toasts"></div>
@@ -103,6 +104,15 @@
   </div>
 </section>
 
+<section id="nameModal" class="screen panel-screen">
+  <div class="panel narrow center">
+    <h2>Choose your runner name</h2>
+    <p class="sub">Your best score appears on the global leaderboard under this name. You can change it later in Settings.</p>
+    <input id="nameInput" class="field" maxlength="16" placeholder="e.g. Maze Master" autocomplete="off" spellcheck="false">
+    <div class="btnrow vertical"><button id="nameSave" class="btn primary">Save &amp; play</button><button id="nameSkip" class="btn">Skip for now</button></div>
+  </div>
+</section>
+
 <section id="settings" class="screen panel-screen">
   <div class="panel narrow">
     <header><h2>Settings</h2></header>
@@ -138,6 +148,7 @@
     <p id="goCause" class="sub"></p>
     <div id="goScore">0</div>
     <div id="goBest" class="newbest hidden">★ NEW BEST ★</div>
+    <div id="goRank" class="rankline hidden"></div>
     <div class="stats">
       <div><small>Best</small><b id="goBestVal">0</b></div>
       <div><small>Distance</small><b id="goDist">0 m</b></div>

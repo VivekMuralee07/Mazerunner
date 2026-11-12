@@ -59,7 +59,21 @@ export class UI {
       if (!confirm('Erase all coins, outfits, upgrades and best scores?')) return;
       Store.reset(); Missions.ensure(); this.game.player.setSkin(SKINS[0]); this.refreshMenu(); this.renderSettings();
     });
+    $('#nameSave').addEventListener('click', () => { Audio.sfx.click(); this.saveName($('#nameInput').value); });
+    $('#nameSkip').addEventListener('click', () => { Audio.sfx.click(); this.saveName(''); });
+    $('#nameInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.stopPropagation(); this.saveName($('#nameInput').value); } e.stopPropagation(); });
     this.refreshMenu();
+  }
+
+  saveName(v) {
+    const s = Store.get().settings; v = v.replace(/[<>&"'\u0000-\u001f]/g, '').trim().slice(0, 16);
+    if (v) s.name = v; s.namePrompted = true; Store.save(); this.hide('nameModal'); this.show('menu'); this.refreshMenu();
+  }
+  /** First launch: ask for a leaderboard name. */
+  maybeAskName() {
+    const s = Store.get().settings;
+    if (s.name || s.namePrompted) return;
+    this.hide('menu'); this.show('nameModal'); setTimeout(() => $('#nameInput').focus(), 300);
   }
 
   onConfirm() {
@@ -74,7 +88,7 @@ export class UI {
   hud(on) { $('#hud').classList.toggle('hidden', !on); }
 
   loading(p, text) { $('#loadfill').style.width = `${Math.round(p * 100)}%`; if (text) $('#loadtext').textContent = text; }
-  loaded() { const l = $('#loading'); l.style.transition = 'opacity .5s'; l.style.opacity = 0; setTimeout(() => l.classList.remove('show'), 500); this.showMenu(); }
+  loaded() { const l = $('#loading'); l.style.transition = 'opacity .5s'; l.style.opacity = 0; setTimeout(() => l.classList.remove('show'), 500); this.showMenu(); this.maybeAskName(); }
   loadError(msg) { $('#loaderror').textContent = msg; $('#loaderror').classList.remove('hidden'); $('#loadtext').textContent = 'Could not start the game'; }
 
   refreshMenu() {
@@ -213,6 +227,15 @@ export class UI {
   }
   clearToasts() { $('#toasts').innerHTML = ''; for (const [, e] of this.puEls) e.el.remove(); this.puEls.clear(); }
 
+  /** Turn hint: an arrow that pulses as a corner approaches. dir: +1 left, -1 right, 0 none. */
+  setTurn(dir, dist, accepted) {
+    const el = $('#turnHint');
+    if (!dir || dist > 120) { if (this.turnShown) { el.classList.add('hidden'); this.turnShown = false; } return; }
+    if (!this.turnShown) { el.classList.remove('hidden'); this.turnShown = true; }
+    el.dataset.dir = dir > 0 ? 'left' : 'right'; el.classList.toggle('near', dist < 40); el.classList.toggle('ok', !!accepted);
+    $('#turnDist').textContent = `${Math.max(0, Math.round(dist))} m`;
+  }
+
   flash(color) { const f = $('#flash'); f.style.transition = 'none'; f.style.background = color; f.style.opacity = 1; void f.offsetWidth; f.style.transition = 'opacity .45s ease-out'; f.style.opacity = 0; }
 
   onBiome(biome, announce) {
@@ -223,8 +246,8 @@ export class UI {
   // ------------------------------------------------------------------ game over
   showGameOver(d) {
     this.hud(false);
-    $('#goTitle').textContent = d.cause === 'caught' ? 'Caught!' : d.cause === 'boulder' ? 'Flattened!' : 'Crushed!';
-    $('#goCause').textContent = d.cause === 'caught' ? 'The Minotaur caught up with you.' : d.cause === 'boulder' ? 'A boulder rolled right over you.' : 'You ran straight into the maze’s stone.';
+    $('#goTitle').textContent = d.cause === 'caught' ? 'Caught!' : d.cause === 'boulder' ? 'Flattened!' : d.cause === 'turn' ? 'Missed the turn!' : 'Crushed!';
+    $('#goCause').textContent = d.cause === 'caught' ? 'The Minotaur caught up with you.' : d.cause === 'boulder' ? 'A boulder rolled right over you.' : d.cause === 'turn' ? 'Swipe the way the arrow points to take a corner.' : 'You ran straight into the maze’s stone.';
     $('#goScore').textContent = fmt(d.score);
     $('#goBest').classList.toggle('hidden', !d.newBest);
     $('#goBestVal').textContent = fmt(d.best); $('#goDist').textContent = `${fmt(d.distance)} m`; $('#goCoins').textContent = fmt(d.coins);
@@ -234,6 +257,8 @@ export class UI {
     $('#goMissions').innerHTML = html;
     this.reviveInfo = d; this.updateRevive();
     this.show('gameover');
+    const rk = $('#goRank'); rk.classList.add('hidden');
+    Cloud.push().then(() => Cloud.leaderboard(1)).then((r) => { if (r.rank) { rk.textContent = `🌍 Global rank #${fmt(r.rank)} of ${fmt(r.players)} runners`; rk.classList.remove('hidden'); } }).catch(() => {});
   }
   updateRevive() {
     const d = this.reviveInfo, wallet = Store.get().coins, b = $('#btnRevive');

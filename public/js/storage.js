@@ -14,7 +14,7 @@ const DEFAULTS = () => ({
   missionSet: 0,
   missions: null,           // generated lazily by missions.js
   lifetime: { distance: 0, coins: 0, jumps: 0, rolls: 0, powerups: 0, lanes: 0, climbs: 0, time: 0 },
-  settings: { music: true, sfx: true, quality: 'auto', tutorialDone: false, name: '' },
+  settings: { music: true, sfx: true, quality: 'auto', tutorialDone: false, name: '', namePrompted: false },
 });
 
 let data = null;

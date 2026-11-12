@@ -26,7 +26,9 @@ let pass = 0, fail = 0;
 const check = (name, ok, extra = '') => { ok ? pass++ : fail++; console.log(`${ok ? '  PASS' : '  FAIL'}  ${name}${extra ? '  ' + extra : ''}`); };
 
 const browser = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--autoplay-policy=no-user-gesture-required'] });
-const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+await ctx.addInitScript(() => { if (!localStorage.getItem('labyrinth-run-save-v1') && !window.__noPreset) localStorage.setItem('labyrinth-run-save-v1', JSON.stringify({ settings: { namePrompted: true, tutorialDone: true } })); });
+const page = await ctx.newPage();
 const problems = [];
 page.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warning') problems.push(`${m.type()}: ${m.text()}`); });
 page.on('pageerror', (e) => problems.push(`pageerror: ${e.message}`));
@@ -43,7 +45,7 @@ try {
   await page.evaluate(() => {
     const g = window.__game;
     window.T = {
-      start() { g.play(); let n = 0; while (g.state !== 'running' && n++ < 600) { g.step(1 / 60); } g.world.spawnS = 1e12; for (const s of g.world.solids) s.ghost = true; g.world.coins.length = 0; return g.state; },
+      start() { g.play(); g.autoTurn = true; let n = 0; while (g.state !== 'running' && n++ < 600) { g.step(1 / 60); } g.world.spawnS = 1e12; for (const s of g.world.solids) s.ghost = true; g.world.coins.length = 0; return g.state; },
       run(sec, fn) { for (let i = 0; i < sec * 60 && g.state === 'running'; i++) { fn && fn(i); g.step(1 / 60); } },
       until(cond, maxSec = 20, fn) { for (let i = 0; i < maxSec * 60; i++) { if (cond()) return true; if (g.state !== 'running' && g.state !== 'dying') return cond(); fn && fn(i); g.step(1 / 60); } return false; },
       add(type, lane, ahead, o) { return g.world.addSolid(type, lane, g.dist + ahead, o); },
@@ -249,6 +251,69 @@ try {
   r = await page.evaluate(() => { const g = window.__game, T = window.T; T.start(); g.grant('jetpack', 0, 1); T.run(1.2); const ys = g.world.coins.map((c) => c.y); const xs = g.world.coins.map((c) => c.x); return { n: ys.length, minY: Math.min(...ys), spread: +(Math.max(...xs) - Math.min(...xs)).toFixed(1), scale: g.world.coins[0].scale }; });
   check('jetpack coins form big, high, flowing ribbons across the lanes', r.n > 30 && r.minY > 6.5 && r.spread > 3 && r.scale > 1.2, JSON.stringify(r));
 
+  console.log('Corners, turns and zig-zags');
+  r = await page.evaluate(async () => {
+    const { Track } = await import('/js/track.js'); const { mulberry } = await import('/js/world.js'); const THREE = await import('three');
+    const out = { legs: 0, zig: 0, minGap: 1e9, maxCum: 0, firstCorner: 0, minLen: 1e9, loops: 0 };
+    for (let seed = 1; seed <= 40; seed++) {
+      const t = new Track(new THREE.Group(), mulberry(seed), 0); t.ensure(60000);
+      out.firstCorner = Math.max(out.firstCorner, 0); if (t.legs[0].b < 300) out.firstCorner = -1;
+      let prevM = 99;
+      for (const l of t.legs) { out.legs++; out.maxCum = Math.max(out.maxCum, Math.abs(Math.round(l.theta / (Math.PI / 2)))); out.minLen = Math.min(out.minLen, l.b - l.a); if (l.m <= 4 && prevM <= 4) out.zig++; prevM = l.m; }
+      // centre lines of non-adjacent legs must stay clear of one another (no overlapping corridors)
+      const seg = t.legs.map((l) => { const e = t.point(l.b); return { a: { x: l.P.x, z: l.P.z }, b: { x: e.x, z: e.z } }; });
+      const dseg = (p, q) => { const dist = (pt, a, b) => { const dx = b.x - a.x, dz = b.z - a.z, L = dx * dx + dz * dz || 1, u = Math.max(0, Math.min(1, ((pt.x - a.x) * dx + (pt.z - a.z) * dz) / L)); return Math.hypot(pt.x - (a.x + u * dx), pt.z - (a.z + u * dz)); }; return Math.min(dist(p.a, q.a, q.b), dist(p.b, q.a, q.b), dist(q.a, p.a, p.b), dist(q.b, p.a, p.b)); };
+      for (let i = 0; i < seg.length; i++) for (let j = i + 2; j < seg.length; j++) out.minGap = Math.min(out.minGap, dseg(seg[i], seg[j]));
+    }
+    return out;
+  });
+  check('the first corner never comes before 300 m', r.firstCorner === 0, JSON.stringify(r));
+  check('zig-zag clusters (short legs back to back) are generated', r.zig > 20 && r.minLen >= 80, JSON.stringify(r));
+  check('the path only ever heads forward or sideways (never back), so it cannot loop', r.maxCum <= 1);
+  check('legs never run closer than 16 m to each other (no overlapping corridors)', r.minGap > 16, `min gap ${Math.round(r.minGap)} m over ${r.legs} legs`);
+
+  const cornerRun = (body) => page.evaluate(`(() => { const g = window.__game, T = window.T; T.start(); g.autoTurn = false; g.boulderT = 1e9; const c = g.world.track.corners[0]; const clear = () => { for (const sd of g.world.solids) if (!sd.isCornerWall) sd.ghost = true; }; const toCorner = (m) => { while (g.state === 'running' && g.dist < c.s - m) { clear(); g.step(1 / 60); } }; ${body} })()`);
+  r = await cornerRun("toCorner(10); g.action(c.dir > 0 ? 'left' : 'right'); let n = 0; while (g.state === 'running' && g.dist < c.s + 14 && n++ < 600) { clear(); g.step(1 / 60); } return { st: g.state, exec: c.executed, target: g.world.track.thetaTarget === c.newTheta, turns: g.stats.turns };");
+  check('swiping toward the arrow turns the corner', r.st === 'running' && r.exec && r.target && r.turns === 1, JSON.stringify(r));
+  r = await cornerRun("toCorner(21); g.action(c.dir > 0 ? 'left' : 'right'); const early = c.accepted; let n = 0; while (g.state === 'running' && g.dist < c.s + 6 && n++ < 600) { clear(); g.step(1 / 60); } return { st: g.state, early, exec: c.executed };");
+  check('a swipe a little early is buffered and executes at the corner', r.st === 'running' && r.early && r.exec, JSON.stringify(r));
+  r = await cornerRun("toCorner(40); g.action(c.dir > 0 ? 'left' : 'right'); const accepted = c.accepted; return { accepted, lane: g.player.target };");
+  check('a lane-change swipe far from the corner is just a lane change', !r.accepted && r.lane !== 1, JSON.stringify(r));
+  r = await cornerRun("let at = null; const od = g.die.bind(g); g.die = (cz) => { at = g.dist - c.s; od(cz); }; let n = 0; while (g.state === 'running' && n++ < 3000) { clear(); g.step(1 / 60); } g.die = od; return { st: g.state, cause: g.cause, atWall: at !== null && at > 2.5 && at < 4.5, at };");
+  check('missing a turn runs you into the wall (fatal)', r.st !== 'running' && r.cause === 'turn' && r.atWall, JSON.stringify(r));
+  r = await cornerRun("toCorner(10); g.action(c.dir > 0 ? 'right' : 'left'); let n = 0; while (g.state === 'running' && n++ < 1500) { clear(); g.step(1 / 60); } return { st: g.state, cause: g.cause };");
+  check('swiping the wrong way does not turn', r.st !== 'running' && r.cause === 'turn', JSON.stringify(r));
+  r = await cornerRun("g.grant('shield', 0, 1); let n = 0; while (g.state === 'running' && g.dist < c.s + 14 && n++ < 1500) { clear(); g.step(1 / 60); } return { st: g.state, exec: c.executed, shield: g.shield };");
+  check('the Spirit Shield absorbs a missed turn and turns you automatically', r.st === 'running' && r.exec && !r.shield, JSON.stringify(r));
+  r = await cornerRun("toCorner(100); g.grant('jetpack', 0, 1); let n = 0; while (g.state === 'running' && g.dist < c.s + 14 && n++ < 1500) { clear(); g.step(1 / 60); } return { st: g.state, exec: c.executed };");
+  check('flying turns corners automatically', r.st === 'running' && r.exec, JSON.stringify(r));
+  r = await cornerRun("let n = 0; while (g.state === 'running' && n++ < 3000) { clear(); g.step(1 / 60); } const died = g.state; g.state === 'dying' && (g.deathT = 9, g.step(1 / 60)); const ok = g.revive(); n = 0; while (g.state !== 'running' && n++ < 800) g.step(1 / 60); let m = 0; while (g.state === 'running' && g.dist < c.s + 20 && m++ < 800) { clear(); g.step(1 / 60); } return { died, ok, st: g.state, exec: c.executed };");
+  check('reviving at a corner carries on round the bend', r.ok && r.st === 'running' && r.exec, JSON.stringify(r));
+  r = await page.evaluate(() => {
+    const g = window.__game, w = g.world; w.reset(5, 0); const seen = []; const orig = w.addSolid.bind(w);
+    w.addSolid = (t, l, s, o) => { const sd = orig(t, l, s, o); seen.push([sd.s0, sd.s1]); return sd; };
+    const corners = new Set();
+    for (let d = 0; d < 12000; d += 20) { w.update(0.016, d, 30, 0); for (const c of w.track.corners) corners.add(c.s); w.solids.length = 0; w.coins.length = 0; }
+    let bad = 0, nc = 0; for (const cs of corners) { if (cs > 11000) continue; nc++; for (const [a, b] of seen) if (b > cs - 34 && a < cs + 15) bad++; }
+    return { bad, corners: nc + 0, obstacles: seen.length };
+  });
+  check('no obstacles are ever placed in or just before a junction', r.bad === 0 && r.corners > 6, JSON.stringify(r));
+
+  console.log('Name prompt');
+  const fresh = await browser.newContext({ viewport: { width: 1000, height: 700 } });
+  const fp = await fresh.newPage(); const fproblems = [];
+  fp.on('pageerror', (e) => fproblems.push(e.message));
+  await fp.goto(url); await fp.waitForFunction(() => window.__game && window.__game.state === 'menu', null, { timeout: 90000 });
+  await fp.waitForSelector('#nameModal.show', { timeout: 40000 });
+  check('a first-time player is asked for a leaderboard name', await fp.isVisible('#nameInput'));
+  await fp.fill('#nameInput', 'Ada Lovelace'); await fp.click('#nameSave');
+  const nm = await fp.evaluate(async () => { const m = await import('/js/storage.js'); return { name: m.get().settings.name, asked: m.get().settings.namePrompted }; });
+  check('the chosen name is saved and the prompt closes', nm.name === 'Ada Lovelace' && nm.asked && !(await fp.isVisible('#nameModal')) && (await fp.isVisible('#btnPlay')), JSON.stringify(nm));
+  await fp.evaluate(async () => { const m = await import('/js/storage.js'); const g = window.__game; m.get().best = 777; m.get().bestDistance = 120; m.save(); const c = await import('/js/cloud.js'); await c.push(); });
+  const board = await fp.evaluate(async () => (await (await fetch('/api/leaderboard?limit=50')).json()).top.map((e) => e.name + ':' + e.best));
+  check('several players share one leaderboard (names and best scores)', board.some((e) => e === 'Ada Lovelace:777') && board.length >= 2, board.join(', '));
+  await fresh.close();
+
   console.log('Persistent stats (server + device)');
   r = await page.evaluate(async () => {
     const id = crypto.randomUUID(), put = (i, b) => fetch(`/api/save/${i}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(b) });
@@ -313,7 +378,7 @@ try {
   await page.evaluate(() => navigator.serviceWorker.ready);
   check('service worker is active', await page.evaluate(() => !!navigator.serviceWorker.controller || !!navigator.serviceWorker.ready));
   await page.waitForTimeout(1500);
-  const cached = await page.evaluate(async () => (await (await caches.open('labyrinth-run-v2')).keys()).length);
+  const cached = await page.evaluate(async () => { let n = 0; for (const k of await caches.keys()) n += (await (await caches.open(k)).keys()).length; return n; });
   check('app shell is precached for offline play', cached >= 30, `${cached} files`);
 
   console.log('Pause, controls & visuals');
@@ -339,7 +404,7 @@ try {
 
   console.log('Endless-run fuzz (bot plays ~10 simulated minutes, all biomes)');
   r = await page.evaluate(() => {
-    const g = window.__game; g.state = 'menu'; g.ui.hide('pause'); g.play(); let n = 0; while (g.state !== 'running' && n++ < 600) g.step(1 / 60);
+    const g = window.__game; g.state = 'menu'; g.ui.hide('pause'); g.play(); g.autoTurn = false; let n = 0; while (g.state !== 'running' && n++ < 600) g.step(1 / 60);
     const w = g.world; let t = 0;
     const biomes = new Set(); let trace = null; const origDie = g.die.bind(g);
     g.die = (c) => { trace = { c, lane: g.player.target, x: +g.player.x.toFixed(2), y: +g.player.y.toFixed(2), roll: g.player.rollT > 0, near: w.solids.filter((s) => Math.abs(s.s0 - g.dist) < 14).map((s) => `${s.type}${s.lane}@${(s.s0 - g.dist).toFixed(1)}..${(s.s1 - g.dist).toFixed(1)}${s.ghost ? 'G' : ''}${s.ignore ? 'I' : ''}`) }; origDie(c); };
@@ -347,7 +412,9 @@ try {
     // (never cut into a lane that has an obstacle right there), jumps barriers and rolls under beams.
     const bot = () => {
       const p = g.player, sp = Math.max(g.speed, 10), look = Math.max(60, sp * 2.6), STEP = 4, n = Math.floor(look / STEP);
-      const sols = w.solids.filter((sd) => !sd.ghost && !sd.ignore && sd.s1 > g.dist - 5 && sd.s0 < g.dist + look + 10);
+      const sols = w.solids.filter((sd) => !sd.ghost && !sd.ignore && !sd.isCornerWall && sd.s1 > g.dist - 5 && sd.s0 < g.dist + look + 10);
+      const cn = w.track.nextCorner(g.dist);
+      if (cn && !cn.accepted && cn.s - g.dist < 14) g.action(cn.dir > 0 ? 'left' : 'right');          // turn when the arrow says so
       const fatal = (l, s) => sols.some((sd) => sd.lane === l && (sd.type === 'wall' || sd.type === 'block') && s > sd.s0 - 1.8 && s < sd.s1 + 1.8);
       const canEnter = (m, s) => !sols.some((sd) => sd.lane === m && sd.s0 - 2.4 < s + sp * 0.18 && sd.s1 + 2.4 > s);
       const safe = Array.from({ length: n + 1 }, () => [false, false, false]);
@@ -377,8 +444,8 @@ try {
     g.die = origDie;
     return { t: Math.round(t), st: g.state, dist: Math.round(g.dist), cause: g.cause, speed: +g.speed.toFixed(1), biomes: [...biomes], coins: g.runCoins, trace };
   });
-  check('10 minutes of bot play never hit an impossible pattern', r.st === 'running' && r.t >= 600, JSON.stringify(r));
-  check('all four biomes were visited', r.biomes.length === 4);
+  check('10 minutes of bot play (turning every corner) never hit an impossible pattern', r.st === 'running' && r.t >= 600, JSON.stringify(r));
+  check('all eight biomes were visited', r.biomes.length === 8, `visited ${r.biomes.length}`);
   check('speed ramps up to the cap', r.speed >= 35);
 } catch (e) {
   fail++; console.log('  FAIL  test run crashed:', e.message);
