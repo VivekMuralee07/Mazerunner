@@ -25,6 +25,31 @@ for (let i = 0; i < 50; i++) { try { await new Promise((r, j) => http.get(url + 
 let pass = 0, fail = 0;
 const check = (name, ok, extra = '') => { ok ? pass++ : fail++; console.log(`${ok ? '  PASS' : '  FAIL'}  ${name}${extra ? '  ' + extra : ''}`); };
 
+console.log('Multiplayer room server (WebSocket protocol)');
+{
+  const { WebSocket } = await import('ws');
+  const open = () => new Promise((res, rej) => { const w = new WebSocket(`ws://localhost:${PORT}/ws`); w.inbox = []; w.on('message', (d) => w.inbox.push(JSON.parse(d))); w.on('open', () => res(w)); w.on('error', rej); });
+  const wait = (ms) => new Promise((r2) => setTimeout(r2, ms));
+  const last = (w, t) => [...w.inbox].reverse().find((m) => m.t === t);
+  const a = await open(), b2 = await open();
+  a.send(JSON.stringify({ t: 'create', name: '<b>Alice</b>' })); await wait(150);
+  const code = last(a, 'created')?.code; check('a room is created with a 4-character code', /^[A-Z0-9]{4}$/.test(code || ''), code);
+  b2.send(JSON.stringify({ t: 'join', code: 'ZZZZ', name: 'Bob' })); await wait(150); check('an unknown code is refused', !!last(b2, 'error')?.msg?.includes('No room'));
+  b2.send(JSON.stringify({ t: 'join', code: (code || '').toLowerCase(), name: 'Bob' })); await wait(150);
+  check('joining works (lower-case code is fine) and names are sanitised and shared', last(b2, 'joined')?.peer?.name === 'bAlice/b' && last(a, 'peer')?.peer?.name === 'Bob');
+  const c3 = await open(); c3.send(JSON.stringify({ t: 'join', code, name: 'Carl' })); await wait(150); check('a third player is refused (two per room)', !!last(c3, 'error')?.msg?.includes('full'));
+  b2.send(JSON.stringify({ t: 'start' })); await wait(120); check('only the host can start the match', !last(a, 'go'));
+  a.send(JSON.stringify({ t: 'start' })); await wait(150);
+  const ga = last(a, 'go'), gb = last(b2, 'go'); check('start hands both players the same maze seed', ga && gb && ga.seed === gb.seed && ga.seed > 0);
+  a.send(JSON.stringify({ t: 'state', s: 123.5, x: 2.4 })); await wait(120); check('state is relayed to the partner only', last(b2, 'state')?.s === 123.5 && !last(a, 'state'));
+  b2.send(JSON.stringify({ t: 'event', kind: 'revive' })); await wait(120); check('events (revive etc.) are relayed', last(a, 'event')?.kind === 'revive');
+  a.send('x'.repeat(5000)); await wait(250); check('an oversize message closes the sender', a.readyState !== 1);
+  await wait(200); check('the partner is told when someone drops', !!last(b2, 'peerLeft'));
+  const d4 = await open(); d4.send('not json'); d4.send(JSON.stringify({ t: 'nonsense' })); await wait(120); check('junk input is ignored without dropping the connection', d4.readyState === 1);
+  const bad = await new Promise((res) => { const w = new WebSocket(`ws://localhost:${PORT}/nope`); w.on('error', () => res(true)); w.on('open', () => res(false)); }); check('other upgrade paths are rejected', bad);
+  for (const w of [a, b2, c3, d4]) try { w.close(); } catch { /* ignore */ }
+}
+
 const browser = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--autoplay-policy=no-user-gesture-required'] });
 const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 } });
 await ctx.addInitScript(() => { if (!localStorage.getItem('labyrinth-run-save-v1') && !window.__noPreset) localStorage.setItem('labyrinth-run-save-v1', JSON.stringify({ settings: { namePrompted: true, tutorialDone: true, quality: 'low' } })); });
@@ -314,6 +339,31 @@ try {
   check('several players share one leaderboard (names and best scores)', board.some((e) => e === 'Ada Lovelace:777') && board.length >= 2, board.join(', '));
   await fresh.close();
 
+  console.log('Bonus car (25,000 points)');
+  r = await page.evaluate(() => {
+    const g = window.__game, T = window.T, out = {}; T.start(); g.boulderT = 1e9; g.player.invuln = 9999; g.score = 24990;
+    let n = 0; while (!g.carOffer && n++ < 900) g.step(1 / 60);
+    out.offered = !!g.carOffer && g.world.pickups.some((q) => q.type === 'car'); out.at = Math.round(g.score);
+    let k = 0; while (!g.player.car && k++ < 3000) { if (g.carOffer) { const li = [-2.4, 0, 2.4].findIndex((x) => Math.abs(x - g.carOffer.x) < 0.1); g.player.target = g.player.lane = li; } g.step(1 / 60); }
+    out.inCar = g.player.car; out.timer = Math.round(g.timers.car); out.realm = g.realmTarget; out.model = g.player.carModel.visible && !g.player.model.visible;
+    g.player.invuln = 0; g.player.carX = 3; T.run(1, () => {}); out.right = +g.player.x.toFixed(2);
+    g.player.carX = -0.7; T.run(1, () => {}); out.between = +g.player.x.toFixed(2);
+    const sp0 = g.speed; g.action('jump'); T.run(0.7, () => {}); out.nitro = +(g.speed / sp0).toFixed(2); out.cd = g.player.nitroCd > 3;
+    g.world.addSolid('wall', 1, g.dist + 18); g.world.addSolid('block', 1, g.dist + 40, { ramp: false, body: 8 }); g.player.carX = 0; const sc0 = g.score, sm0 = g.stats.smashed | 0;
+    T.run(2.5, () => {}); out.smashed = (g.stats.smashed | 0) - sm0; out.stillRunning = g.state === 'running'; out.scoreUp = g.score > sc0 + 100;
+    g.grant('wings', 0, 1); out.noFlightInCar = !g.player.flying;
+    const coins0 = g.runCoins; let t = 0; while (g.player.car && t < 140) { g.step(1 / 60); t += 1 / 60; }
+    out.ranFor = Math.round(t); out.ended = !g.player.car; out.bonus = g.runCoins - coins0 >= 100; out.safe = g.player.invuln > 0; out.realmEnd = g.realmTarget; out.next = g.nextCarAt > g.score + 50000;
+    return out;
+  });
+  check('a bonus car is offered at 25,000 points', r.offered && r.at >= 25000, JSON.stringify({ offered: r.offered, at: r.at }));
+  check('driving into it starts a 2-minute ride and switches to the car', r.inCar && r.timer === 120 && r.model, JSON.stringify({ timer: r.timer, model: r.model }));
+  check('the car steers freely (not stuck to lanes)', r.right > 2.9 && r.between > -0.8 && r.between < -0.6, JSON.stringify({ right: r.right, between: r.between }));
+  check('nitro boosts the speed and then needs to recharge', r.nitro > 1.3 && r.cd, JSON.stringify({ nitro: r.nitro }));
+  check('the car smashes gates and slabs instead of crashing', r.smashed >= 2 && r.stillRunning && r.scoreUp, JSON.stringify({ smashed: r.smashed }));
+  check('flight pick-ups do nothing while driving', r.noFlightInCar);
+  check('the ride ends after ~2 minutes with a coin bonus, brief invulnerability and the next car much later', r.ended && r.ranFor >= 112 && r.ranFor <= 122 && r.bonus && r.safe && r.realmEnd === 0 && r.next, JSON.stringify({ ranFor: r.ranFor }));
+
   console.log('Persistent stats (server + device)');
   r = await page.evaluate(async () => {
     const id = crypto.randomUUID(), put = (i, b) => fetch(`/api/save/${i}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(b) });
@@ -461,8 +511,56 @@ try {
     return { t: Math.round(t), st: g.state, dist: Math.round(g.dist), cause: g.cause, speed: +g.speed.toFixed(1), biomes: [...biomes], coins: g.runCoins, trace };
   });
   check('10 minutes of bot play (turning every corner) never hit an impossible pattern', r.st === 'running' && r.t >= 600, JSON.stringify(r));
-  check('all eight biomes were visited', r.biomes.length === 8, `visited ${r.biomes.length}`);
+  check('all nine biomes were visited', r.biomes.length === 9, `visited ${r.biomes.length}`);
   check('speed ramps up to the cap', r.speed >= 35);
+  console.log('Two-player co-op (two real browser sessions)');
+  {
+    const mkp = async (name) => {
+      const cx = await browser.newContext({ viewport: { width: 640, height: 360 } });
+      await cx.addInitScript((n) => localStorage.setItem('labyrinth-run-save-v1', JSON.stringify({ settings: { namePrompted: true, tutorialDone: true, quality: 'low', name: n } })), name);
+      const pg = await cx.newPage(); pg.on('pageerror', (e) => problems.push(`pageerror(${name}): ${e.message}`));
+      await pg.goto(url); await pg.waitForFunction(() => window.__game && window.__game.state === 'menu', null, { timeout: 150000 }); return pg;
+    };
+    const A = await mkp('Ada'), B = await mkp('Bo');
+    await A.click('#btnTogether'); await A.waitForSelector('#lobby.show'); await A.click('#lobbyCreate');
+    await A.waitForFunction(() => document.getElementById('lobbyBigCode').textContent.length === 4 && !document.getElementById('lobbyWait').classList.contains('hidden'));
+    const code = await A.textContent('#lobbyBigCode'); check('the host sees a 4-letter room code', /^[A-Z0-9]{4}$/.test(code), code);
+    await B.click('#btnTogether'); await B.waitForSelector('#lobby.show'); await B.fill('#lobbyCode', code.toLowerCase()); await B.click('#lobbyJoin');
+    await B.waitForFunction(() => !document.getElementById('lobbyWait').classList.contains('hidden'));
+    await A.waitForFunction(() => !document.getElementById('lobbyStart').classList.contains('hidden'));
+    check('both lobbies show both players; only the host gets the Start button', (await A.textContent('#lobbyPlayers')).includes('Bo') && (await B.textContent('#lobbyPlayers')).includes('Ada') && await B.locator('#lobbyStart').isHidden());
+    await A.click('#lobbyStart');
+    await Promise.all([A, B].map((pg) => pg.waitForFunction(() => window.__game.coop.active && window.__game.state === 'running', null, { timeout: 240000 })));
+    check('both phones start the match together', true);
+    const sig = (pg) => pg.evaluate(() => { const g = window.__game; for (let i = 0; i < 400; i++) g.step(1 / 60); return { sol: g.world.solids.filter((x) => !x.isCornerWall).slice(0, 30).map((x) => `${x.type}${x.lane}@${x.s0.toFixed(1)}`).join('|'), n: g.world.solids.length, miss: g.coop.missions.map((m) => m.text).join('|') }; });
+    const [sa, sb] = [await sig(A), await sig(B)];
+    check('the two phones build an IDENTICAL maze (same obstacles in the same places)', sa.sol === sb.sol && sa.n > 5, sa.sol.slice(0, 50));
+    check('the three team missions are the same on both phones', sa.miss === sb.miss && sa.miss.split('|').length === 3, sa.miss);
+    await A.waitForTimeout(1500); await B.waitForTimeout(1500);
+    const gh = await Promise.all([A, B].map((pg) => pg.evaluate(() => { const c = window.__game.coop; return { vis: !!(c.ghost && c.ghost.visible), name: c.ghost && c.ghost.name }; })));
+    check('each phone shows the other runner as a named ghost', gh[0].vis && gh[1].vis && gh[0].name === 'Bo' && gh[1].name === 'Ada', JSON.stringify(gh));
+    await A.evaluate(() => { const g = window.__game; g.boulderT = 1e9; g.player.invuln = 0; g.die('crash'); });
+    await B.waitForFunction(() => !window.__game.coop.partner.alive, null, { timeout: 30000 });
+    await A.evaluate(() => { const g = window.__game; for (let i = 0; i < 200; i++) g.step(1 / 60); });
+    check('a fallen player waits "down" (not game over) and the buddy is told', await A.evaluate(() => window.__game.state === 'down') && await A.isVisible('#downBanner'));
+    await B.evaluate(() => { const g = window.__game; for (let i = 0; i < 240; i++) g.step(1 / 60); });
+    check('a revive heart appears for the survivor', await B.evaluate(() => window.__game.world.pickups.some((q) => q.type === 'heart')));
+    await B.evaluate(() => { const g = window.__game; g.grant('heart', g.player.x, 1); });
+    await A.waitForFunction(() => window.__game.state === 'countdown' || window.__game.state === 'running', null, { timeout: 30000 });
+    check('grabbing the heart revives the buddy, free of charge', await A.evaluate(() => !window.__game.player.dead) && !(await A.isVisible('#downBanner')));
+    await Promise.all([A, B].map((pg) => pg.waitForFunction(() => window.__game.state === 'running', null, { timeout: 150000 })));
+    const tm = await Promise.all([A, B].map((pg) => pg.evaluate(() => { const c = window.__game.coop; c.partner.stats = { ...c.partner.stats, c: 400, p: 20, j: 300, r: 300, d: 20000, b: 9, h: 9 }; c.partner.score = 200000; window.__game.runCoins = 5; c.checkMissions(); return { done: c.missions.filter((m) => m.done).length, reward: c.reward }; })));
+    check('team missions complete from the combined stats of both players, with a shared reward', tm[0].done >= 1 && tm[0].reward >= 120, JSON.stringify(tm[0]));
+    await A.evaluate(() => { const g = window.__game; g.player.invuln = 0; g.die('crash'); }); await B.evaluate(() => { const g = window.__game; g.player.invuln = 0; g.die('crash'); });
+    await Promise.all([A, B].map((pg) => pg.evaluate(() => { const g = window.__game; for (let i = 0; i < 400; i++) g.step(1 / 60); })));
+    await Promise.all([A, B].map((pg) => pg.waitForSelector('#coopOver.show', { timeout: 40000 })));
+    const txt = (await A.evaluate(() => document.getElementById('coopOver').innerText)).toLowerCase();
+    check('when both are down the team results show on both phones', txt.includes('team') && txt.includes('you') && txt.includes('bo'), txt.replace(/\n+/g, ' / ').slice(0, 120));
+    await A.click('#coAgain'); await A.waitForSelector('#lobby.show');
+    check('"back to lobby" keeps the room open for a rematch', (await A.textContent('#lobbyBigCode')) === code);
+    await A.context().close(); await B.context().close();
+  }
+
   console.log('Cache consistency (the "mixed old HUD + new scripts" bug)');
   const sw = await browser.newContext({ viewport: { width: 800, height: 450 } });
   await sw.addInitScript(() => { if (!localStorage.getItem('labyrinth-run-save-v1')) localStorage.setItem('labyrinth-run-save-v1', JSON.stringify({ settings: { namePrompted: true, tutorialDone: true, quality: 'low' } })); });

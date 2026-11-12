@@ -62,7 +62,36 @@ function noise(dur, { vol = 0.3, freq = 1200, q = 1, type = 'bandpass', sweep = 
 }
 
 let lastCoin = 0, coinPitch = 0;
+let mood = 'normal';
+/** 'retro' = the synth-wave score used in the Hollow Realm / during the car ride. */
+export function setMood(m) { mood = m; }
+
+let engineNodes = null;
+export function engine(on) {
+  if (!ctx) return;
+  if (on && !engineNodes) {
+    const o = ctx.createOscillator(), o2 = ctx.createOscillator(), f = ctx.createBiquadFilter(), g = ctx.createGain();
+    o.type = 'sawtooth'; o2.type = 'square'; f.type = 'lowpass'; f.frequency.value = 700; g.gain.value = 0;
+    o.connect(f); o2.connect(f); f.connect(g); g.connect(sfxGain); o.start(); o2.start(); g.gain.setTargetAtTime(0.15, ctx.currentTime, 0.2);
+    engineNodes = { o, o2, f, g };
+  } else if (!on && engineNodes) {
+    const e = engineNodes; engineNodes = null; e.g.gain.setTargetAtTime(0, ctx.currentTime, 0.1);
+    setTimeout(() => { try { e.o.stop(); e.o2.stop(); } catch { /* ignore */ } }, 500);
+  }
+}
+export function engineSpeed(v, boost) {
+  if (!engineNodes) return;
+  const f = 46 + v * 3.2 + (boost ? 30 : 0), t = ctx.currentTime;
+  engineNodes.o.frequency.setTargetAtTime(f, t, 0.05); engineNodes.o2.frequency.setTargetAtTime(f * 0.502, t, 0.05);
+  engineNodes.f.frequency.setTargetAtTime(500 + v * 20 + (boost ? 500 : 0), t, 0.1);
+}
+
 export const sfx = {
+  horn() { tone(392, 0.45, { type: 'square', vol: 0.12 }); tone(494, 0.45, { type: 'square', vol: 0.1 }); },
+  smash() { noise(0.4, { vol: 0.45, freq: 900, sweep: -700, type: 'lowpass' }); tone(80, 0.3, { type: 'sine', vol: 0.4, slide: -40 }); tone(220, 0.18, { type: 'sawtooth', vol: 0.12, slide: -150 }); },
+  nitro() { noise(0.8, { vol: 0.3, freq: 500, sweep: 4500, q: 0.8, type: 'bandpass' }); tone(120, 0.8, { type: 'sawtooth', vol: 0.18, slide: 380 }); },
+  thunder() { noise(1.6, { vol: 0.5, freq: 380, sweep: -280, type: 'lowpass' }); tone(46, 1.4, { type: 'sine', vol: 0.45, slide: -12 }); },
+  skid() { noise(0.7, { vol: 0.22, freq: 2400, sweep: -1800, q: 1.4, type: 'bandpass' }); },
   click() { unlock(); tone(520, 0.08, { type: 'triangle', vol: 0.2 }); tone(780, 0.1, { type: 'triangle', vol: 0.15, delay: 0.04 }); },
   coin() {
     const now = performance.now();
@@ -106,7 +135,18 @@ const ARP = [0, 7, 12, 15, 12, 7, 10, 14];
 const D = 36.7;                                   // D1
 const hz = (semi, oct = 0) => D * Math.pow(2, (semi + oct * 12) / 12);
 
+const RETRO_ROOT = [0, 8, 3, 10];                        // A minor, F, C, G (semitones above A1)
+function scheduleRetro(t, s) {
+  const dur = 60 / tempo / 2, bar = Math.floor(s / 8) % 4, i = s % 8, base = 55 * Math.pow(2, RETRO_ROOT[bar] / 12);
+  const third = bar === 0 ? 3 : 4;
+  oscAt(base, t, dur * 0.85, 'sawtooth', 0.2, 420 + (i % 2) * 380);                     // pulsing bass
+  oscAt(base * 4 * Math.pow(2, [0, third, 7, 12, 7, third, 12, 7][i] / 12), t, dur * 0.7, 'square', 0.06, 2800);   // arpeggio
+  if (i === 0) for (const iv of [0, third, 7]) { oscAt(base * 2 * Math.pow(2, iv / 12) * 1.004, t, dur * 8, 'sawtooth', 0.035, 1100); oscAt(base * 2 * Math.pow(2, iv / 12) * 0.996, t, dur * 8, 'sawtooth', 0.035, 1100); }
+  if (i % 4 === 0) kickAt(t); if (i === 4) snareAt(t); if (i % 2 === 1) hatAt(t, 0.07);
+}
+
 function scheduleStep(t, s) {
+  if (mood === 'retro') return scheduleRetro(t, s);
   const dur = 60 / tempo / 2;
   const bar = Math.floor(s / 8) % 4;
   const root = [0, 0, -2, 3][bar];

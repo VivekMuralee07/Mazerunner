@@ -74,6 +74,10 @@ export const BIOMES = [
     fog: 0xe6c3a0, fogDensity: 0.011, skyTop: 0x5a9ae6, skyBottom: 0xf3d2a8, star: 0,
     ambient: 0xffe9d2, ground: 0xb08a62, ambientI: 0.95, sun: 0xffd9a0, sunI: 2.3, torch: 0xff8a2a, accent: 0xff8a2a,
     wall: 'autumn', floor: 'leaflitter', trim: 0x9a6a3e, mode: [-0.6, 2.6, 0xff9a3a] },
+  { id: 'hollow', name: 'The Hollow Realm',
+    fog: 0x3a1224, fogDensity: 0.0165, skyTop: 0x12041a, skyBottom: 0x6a1c2c, star: 0,
+    ambient: 0x8a6a9a, ground: 0x3a2030, ambientI: 0.62, sun: 0xff7a5a, sunI: 0.95, torch: 0xff2a3a, accent: 0xff2a3a,
+    wall: 'veined', floor: 'ash', trim: 0x3a2030, mode: [0.28, 2.3, 0xff7a6a], storm: true },
   { id: 'crystal', name: 'The Frozen Crystal Gardens',
     fog: 0xbadcec, fogDensity: 0.0115, skyTop: 0x2f86e6, skyBottom: 0xcdeaf8, star: 0,
     ambient: 0xdceeff, ground: 0x93b3c4, ambientI: 1.0, sun: 0xeaf6ff, sunI: 2.1, torch: 0x2ec8ff, accent: 0x18b8e0,
@@ -116,4 +120,4 @@ export const COOP_MISSIONS = [
   { id: 'score', key: 'sc', text: (n) => `Reach a team score of ${n.toLocaleString()}`, goals: [20000, 40000, 80000] },
 ];
 export const COOP_REWARD = 120, COOP_ALL_BONUS = 250;
-export const CAR = { score: 25000, repeat: 60000, time: 120 };
+export const CAR = { score: 25000, repeat: 60000, time: 120, speedMul: 1.3, nitroMul: 1.45, nitroTime: 2, nitroCooldown: 5, steer: 12, halfWidth: 0.95, height: 1.4, bonusCoins: 100 };

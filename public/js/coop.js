@@ -140,7 +140,7 @@ export class Coop {
 
   checkMissions() {
     for (const ms of this.missions) {
-      ms.progress = Math.min(ms.goal, Math.floor(this.teamStat(ms.key)));
+      ms.progress = Math.max(ms.progress, Math.min(ms.goal, Math.floor(this.teamStat(ms.key))));
       if (!ms.done && ms.progress >= ms.goal) {
         ms.done = true; this.reward += COOP_REWARD;
         const s = Store.get(); s.coins += COOP_REWARD; Store.save();

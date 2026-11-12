@@ -26,7 +26,7 @@ async function boot() {
   window.__game = game;                    // handy for debugging / automated tests
   game.coop = new Coop(game, ui);
   ui.bind(game);
-  new Input(canvas, (a) => { Audio.unlock(); game.action(a); });
+  game.input = new Input(canvas, (a, src) => { Audio.unlock(); game.action(a, src); });
   addEventListener('keydown', () => Audio.unlock(), { once: true });
   addEventListener('pointerdown', () => Audio.unlock(), { once: true });
   const msgs = ['Carving the corridors…', 'Lighting the torches…', 'Waking the Minotaur…', 'Ready!'];

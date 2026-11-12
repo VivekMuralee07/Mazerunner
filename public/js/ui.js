@@ -203,6 +203,8 @@ export class UI {
     if (force || coins !== L.coins) { $('#coinCount').textContent = fmt(coins); if (!force) { const c = $('#coins'); c.classList.remove('bump'); void c.offsetWidth; c.classList.add('bump'); } L.coins = coins; }
     if (force || mult !== L.mult) { const m = $('#mult'); m.textContent = `×${mult}`; m.classList.toggle('boost', g.timers && g.timers.double > 0); L.mult = mult; }
     if (force || dist !== L.dist) { $('#dist').textContent = `${fmt(dist)} m`; L.dist = dist; }
+    const nit = $('#nitro'), pl = g.player;
+    if (pl && pl.car) { nit.classList.remove('hidden'); const ready = pl.nitroCd <= 0; nit.textContent = pl.nitro > 0 ? '⚡ NITRO!' : ready ? '⚡ NITRO READY (↑)' : `⚡ ${Math.ceil(pl.nitroCd)}s`; nit.classList.toggle('ready', ready || pl.nitro > 0); } else nit.classList.add('hidden');
     // power-up bars
     const box = $('#powerups');
     const active = [];
